@@ -1,4 +1,4 @@
-\subsection{File System Structure and Organization} \label{file-structure-and-hierarchy}
+\subsection{File System Structure and Organization} \label{file-structure-and-hierarchy} % done
 
 FreeBSD natively supports two filesystems: Unix File System 2 (UFS2) and Zettabyte File System (ZFS).
 The \textbf{Unix File System (UFS)} is a family of filesystems designed for Unix systems. UFS2 extends the original UFS
@@ -77,7 +77,7 @@ compatibility primarily because of its simplicity. The \textit{dnode/object set/
 Considering the additional features that ZFS comes with, it might not be well-supported on constrained platforms or
 architectures.
 
-\subsection{File Access Methods and Operations} \label{file-access-methods} % comparison
+\subsection{File Access Methods and Operations} \label{file-access-methods} % done
 
 In FreeBSD, the VFS API provides two kinds of operations for working with files: \textit{path-based operations} and
 \textit{file-descriptor operations} \parencite{jensen2021}. The \texttt{open()} function can be used to retrieve a file
@@ -122,9 +122,15 @@ sectors in memory with the \textit{Unified Buffer Cache (UBC)} \parencite{netbsd
 \parencite{netbsd_mmap}. Whenever a mapping operation will be performed, the \texttt{VOP\_MMAP} function is called to notify the
 filesystem \parencite{netbsd_vnodeops}.
 
-It can be seen from the two systems
+Both systems adopt the vnode abstraction as the primary representation of an open file to the kernel. Both also adopts the
+POSIX-compliant operations for accessing open files such as \texttt{open()}, \texttt{read()}, \texttt{write()}, and \texttt{close()}.
+Both FreeBSD and NetBSD also share the same mechanisms in handling file accesses from multiple processes. Both of them also takes
+a modular approach in extending the static and dynamic sections of vnodes. However, FreeBSD has a richer
+model for representing file descriptors, which can support multiple file descriptor types. This allows multiple resources to be
+handled on a unified descriptor table. This is unlike NetBSD that can only access and manage filesystem objects represented as
+vnodes.
 
-\subsection{Directory Structures} \label{dir-struct} % comparison
+\subsection{Directory Structures} \label{dir-struct} % done
 
 The filesystems in both FreeBSD and NetBSd adopts a hierarchical tree-based structure reminiscent to UNIX filesystems. The root directory of the
 filesystem is the \texttt{/} directory \parencite{freebsd_dir_struct}. Table \ref{root-subdirs} lists the common subdirectories of the
@@ -180,7 +186,13 @@ functions \parencite{netbsd_namecache}. New entries are added to the cache table
 Existing entries are removed or flushed from the cache table with \texttt{cache\_purge()} \parencite{netbsd_namecache}.
 \texttt{cache\_purgevfs()} can be used to flush an entire mounted filesystem in the table \parencite{netbsd_namecache}.
 
-\subsection{Disk Space Allocation and Free Space Management} \label{space-allocation-and-free-space} % comparison
+Given their shared UNIX and 4.4BSD ancestry, it is expected that both systems share the same directory structure rooted at \texttt{/}
+directory. Both systems also adopt the \texttt{namei()} function as their primary pathname resolution routine and \texttt{VOP\_LOOKUP()}
+to resolve individual pathname components. Name cache lengths in both systems are capped at 31 characters, which is set by the
+\texttt{NCHNAMLEN} macro \parencites{netbsd_namecache}{freebsd_namecache}. When entries exceed the cap, they are not added in the
+name cache. Lastly, both systems face the risk of deadlocks with their \texttt{VOP\_LOOKUP()} implementation.
+
+\subsection{Disk Space Allocation and Free Space Management} \label{space-allocation-and-free-space} % done
 
 As mentioned in Section \ref{file-structure-and-hierarchy}, FreeBSD's UFS2 and NetBSD's FFS basically have the same organization. To summarize,
 the disk is partitioned into cylinder groups. Each cylinder in the cylinder group consists of a superblock,
@@ -250,7 +262,25 @@ With a space map, the filesystem can perform random frees just as fast as sequen
 space to be freed can be determined by the location of the metaslab listed in the space map offsetted by an extent
 \parencite{david2012}.
 
-\subsection{File Protection and Security} \label{file-protection-security} % comparison
+UNIX-based filesystems such as UFS and FFS adopt the same bitmap approach for keeping track of free space. The bitmaps
+serve as a primary reference to UFS and FFS to mitigate fragmentation. While bitmaps have minimal overhead, they often
+cannot prevent fragmentation for large files. This typically happens when allocating files that exceed the 48K threshold
+\parencite{freebsd_filesystem_org}. FFS resolves this by redirecting the block allocation to a different cylinder group
+when it exceeds 48K and a megabyte after if it still exceeds the capacity of the redirected cylinder group \parencite{freebsd_filesystem_org}.
+This adds complexity in allocating new blocks and can potentially increase seek distances when allocating large files.
+ZFS, however, make use of space maps for free space management, which adopts a fundamentally different approach for managing free memory.
+As discussed earlier, the space map approach significantly improves the performance of random frees since each metaslab
+or a region in memory has its own space map wherein transactions are only logged on that region. For UFS and FFS,
+random frees typically requires scattered bitmap updates, which can be inefficient as opposed to tracking free space from
+transaction logs in the space map. However, this approach of logging the transactions and replaying them using AVL tree
+can add significant overhead, which is nonexistent in the bitmap approach. Another advantage of ZFS is that it handles
+well for large storage workloads since it is able to add more devices to the pool. This allows space allocation to be
+redistributed across multiple vdevs. However, UFS and FFS are fixed into their partitions \parencite{schaumann},
+hence expanding the partitions require the system to perform a full backup-repartition-recovery cycle. Free space management
+is highly crucial in UFS as accessing files become increasingly inefficient as more files are added to the filesystem.
+A good rule of thumb is to keep around 1-10\% of minimum free space, which depends on the partition size \parencite{oracle_min_freespace}.
+
+\subsection{File Protection and Security} \label{file-protection-security} % done
 
 Both FreeBSD and NetBSD extend \textit{owner/group/other} permission model for file access standard in UNIX systems with
 POSIX's Access Control Lists. An \textbf{Access Control List (ACL)} extends the permission model by incorporating
@@ -299,9 +329,48 @@ In NetBSD, the permissions of a file can be checked with \texttt{VOP\_ACCESS()} 
 \texttt{VOP\_ACCESS()} can check if a file has the read, write, or execute permissions by passing in the \texttt{VREAD}, \texttt{VWRITE},
 or \texttt{VEXEC} constants to the \texttt{mode} argument respectively \parencite{netbsd_vnodeops}. NetBSD also adopts the
 \textbf{Role-Based Access Control (RBAC)} introduced by \textcite{crooks2009}. The RBAC model splits the privileges of a super user into
-a total of 57 separate roles \parencite{crooks2009}.
+a total of 57 separate roles \parencite{crooks2009}. NetBSD also supports exploit mitigation mechanisms, which are the following according
+to \textcite{netbsd_security}:
 
-\subsection{Reliability and Crash Recovery} \label{reliability-and-crash-recovery} % comparison
+\begin{itemize}
+	\item \textbf{PaX ASLR (Address Space Layout Randomization)}: obfuscate the address space layout, specifically where libraries
+	      and specific functions are stored in memory.
+
+	\item \textbf{PaX MPROTECT}: enforces memory protection by preventing malicious programs from marking writable memory blocks
+	      as executable.
+
+	\item \textbf{PaX SegvGuard}: tracks segmentation faults and provide rate-limiting.
+
+	\item \textbf{\texttt{gcc()} Stack-Smashing Protection (SSP)}: aborts programs with corrupted variables and buffers which can be
+	      used to alter the control flow of the program. These set of compiler extensions come with \texttt{gcc()}.
+
+	\item \textbf{\texttt{FORTIFY\_SOURCE}}: detects buffer overflows with little to no bounds checking implemented to prevent
+	      further damage.
+
+	\item \textbf{NULL pointer dereferences protections}: restricts mappings on the zero address to prevent code injection
+	      attacks.
+\end{itemize}
+
+\noindent
+FreeBSD also shares similar exploit mitigation mechanisms with ASLR but only on 64-bit architectures \parencite{larabel2022}.
+However, this is only adopted in the user address space as FreeBSD currently does not implement ASLR on the kernel space with
+KASLR on FreeBSD 14.x releases \parencite{belousov_maste}.
+
+Both systems adopt the same permission model standard to UNIX systems and extend the three standard permissions with POSIX ACLs.
+Both systems also integrate EAs for their UNIX filesystems. For FreeBSD specifically, the EA layer is pluggable, which can provide
+future flexibility at a cost of performance overhead. NetBSD's EAs are more directly integrated into the vnodes themselves,
+however these mechanisms are only adopted in more recent releases of NetBSD, specifically the 10.0 release as mentioned earlier.
+FreeBSD and NetBSD primarily differ in how permissions are being handled and extended. FreeBSD supports an extended set of permissions
+in the form of file flags. Systemwide access permissions can also be configured with the \texttt{kern.securelevel} state variable,
+which can lack granularity. In NetBSD, superuser permissions are split into permission roles through RBAC. While this provides an increased
+precision in how permissions are granted, this designation of permissions into roles can be complex to manage and might require overhead.
+In terms of exploit mitigation, NetBSD offers a wider variety of mitigation techniques with its PaX features and other standard
+mitigation techniques such as enforcing restrictions to prevent intentional buffer overflows and NULL pointer dereferences.
+However, these techniques need to be tuned for each program using \texttt{paxctl} to be compatible with code generators such as
+debuggers and runtime environments such as the JVM \parencite{netbsd_paxctl}. This is contrast to FreeBSD's mitigation techniques
+which are simpler to enforce but is less effective in actually mitigating exploits.
+
+\subsection{Reliability and Crash Recovery} \label{reliability-and-crash-recovery} % done
 
 In FreeBSD's UFS2 and NetBSD's FFS in the pre-6.0 releases, a \textbf{soft updated dependency tracking system} is employed for crash
 recovery, serving as an alternative
@@ -334,8 +403,15 @@ RAIDZ2, and RAIDZ3. A higher level of RAIDZ corresponds to a higher level of par
 logs write transactions and stores them to the main pool devices \parencite{khurshid2025}. This allows the filesystem to replay the
 logged transactions during system recovery \parencite{khurshid2025}.
 
+The use of a soft updates dependency tracking for FreeBSD's UFS avoids overhead incurred from writing a journal, however, lost blocks
+need to be reclaimed with \texttt{fsck}, which is known to be resource-intensive and time-consuming. This is unlike ZFS's ZIL in FreeBSD
+and FFS's WAPBL in NetBSD which offer faster recovery at the expense of journal write overhead. Furthermore, ZIL's transaction
+semantics is more sophisticated but it introduces a single point-of-failure that renders an entire pool to be corrupted when the
+transaction logs themselves are corrupted. This problem is nonexistent with WAPBL due to its simpler design. However, it offers a lesser
+range of recovery options. Data integrity is adopted in ZFS through checksums and RAIDZ redundancy, which is not natively employed
+in FFS.
 
-\subsection{Disk Scheduling and I/O Management} \label{disk-scheduling-io} % comparison
+\subsection{Disk Scheduling and I/O Management} \label{disk-scheduling-io} % done
 
 Earlier releases of FreeBSD uses primitive disk schedulers such as elevator and C-LOOK schedulers \parencite{rizzo2009}.
 \textcite{rizzo2009} later proposed utilizing the \textbf{GEOM architecture} in disk scheduling, which posed several advantages
@@ -369,7 +445,15 @@ function is called \parencite{chung2002}. NetBSD also implements a \texttt{biowa
 in a buffer queue to be completed \parencite{chung2002}. This is usually called inside a \texttt{bread()} or \texttt{bwrite()}
 functions which allocate a buffer and release a modified buffer respectively \parencite{chung2002}.
 
-\subsection{Performance Considerations} \label{performance-considerations}
+GEOM's modular design in FreeBSD offers immense flexibility for implementing complex disk schedulers on the GEOM layer. This
+flexibility does not seem to be observed in NetBSD's buffer queue approach. However, buffer queues in NetBSD connect directly
+to the vnode layer, which can result in minimal overhead. Disk scheduling in FreeBSD is managed by the CAM subsystem, which
+prioritizes \texttt{BIO\_READ}, \texttt{BIO\_WRITE}, and \texttt{BIO\_FLUSH} commands and combines multiple \texttt{BIO\_DELETE}
+and scheduled as one. Scheduling mechanisms are decided by the lower-layer drivers, which can introduce unpredictability
+in mixed workloads. However, NetBSD offers more explicit scheduling options with \texttt{BUFQ\_FCFS}, \texttt{BUFQ\_DISKSORT},
+\texttt{BUFQ\_PRIOCSCAN}, and \texttt{BUFQ\_READPRIO}.
+
+\subsection{Performance Considerations} \label{performance-considerations} % done
 
 FreeBSD's ZFS support three caching strategies: ARC, L2ARC, and SLOG \parencite{khurshid2025}. The
 \textbf{ARC} or the \textbf{Adaptive Replacement Cache} is an adaptive read caching mechanism that resides in the system's main
@@ -421,5 +505,15 @@ functions respectively \parencite{silvers2000}. Additionally, \texttt{VOP\_GETPA
 in the cache and \texttt{VOP\_PUTPAGES()} needs to write the dirty pages back to the disk; both requires the initiation of an I/O
 operation \parencite{silvers2000}.
 
+The caching approaches of ZFS and FFS vary in their complexity. ZFS's ARC is a deeply layered system with MRU/MFU cache lists, ghost
+tracking and L2ARC for retrieving recently evicted entries, which can be fine-tuned with tunables such as \texttt{arc\_max},
+\texttt{l3arc\_feed\_secs}, and \texttt{logbias}. ARC caching strategy is ideally used in high-storage workloads as it boosts
+storage access performance. However, this deeply layered system introduces high complexity, which can actually hurt its performance
+instead of boosting it. For instance, L2ARC adds RAM overhead for tracking block pointers. Enabling
+prefetching can degrade performance on workloads that perform a high rate of random-read requests. Careless tuning of the tunables
+can also negatively impact the performance and stability of the system \parencite{khurshid2025}. Unlike ZFS, FFS employs a
+simpler and unified caching mechanism with UBCs, which often makes it an ideal option for general-purpose workloads.
+This simplicity comes at a cost of lesser flexibility and difficulty in tuning. Furthermore, early benchmarks on UBC tested by
+\textcite{silvers2000} show that the write performance of UBC still needs improvement.
 
 \subsection{Summary}
