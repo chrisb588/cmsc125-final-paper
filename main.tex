@@ -1,0 +1,70 @@
+
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper, top=1.0in, bottom=1.0in, left=1.0in, right=1.0in, heightrounded]{geometry}
+\usepackage[style=apa, backend=biber]{biblatex}
+\usepackage{hyperref}
+\usepackage{titlesec}
+
+\title{
+    The Forefronts of Berkeley Software Distribution: \\
+    An Analysis and Comparison of FreeBSD and NetBSD
+}
+\author{
+    Brillos, Christian \\ ccbrillos@up.edu.ph \and
+    Gonzales, Lorenzo \\ lgonzales@up.edu.ph
+}
+\date{1 June 2026}
+
+\addbibresource{references.bib}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Overview}
+
+\input{sections/freebsd_overview}
+
+\subsection{NetBSD}
+
+\newpage
+
+\section{Kernel}
+
+\newpage
+
+\section{Processor Management}
+
+\newpage
+
+\section{Memory Management}
+
+\newpage
+
+\section{File and Disk Management}
+\input{sections/file_and_disk.tex}
+
+\newpage
+
+\section{Resource Management}
+
+\newpage
+
+\section{Concurrency Management}
+
+\newpage
+
+\section{Conclusion}
+
+\newpage
+
+\section{Acknowledgement}
+
+\newpage
+\printbibliography
+
+\end{document}

@@ -1,0 +1,425 @@
+\subsection{File System Structure and Organization} \label{file-structure-and-hierarchy}
+
+FreeBSD natively supports two filesystems: Unix File System 2 (UFS2) and Zettabyte File System (ZFS).
+The \textbf{Unix File System (UFS)} is a family of filesystems designed for Unix systems. UFS2 extends the original UFS
+with some major improvements, which includes the addition of 64-bit block pointers, enhancements for better support of
+variable-size blocks, flag fields extensions, per-inode extended attribute extent additions, and the implementation
+of lazy inode initialization \parencite{van_gelderen2003}. It was adopted in FreeBSD 5.0 and has been refined for around
+two decades ever since \parencite{freebsd_zfs_vs_ufs}. UFS2 partitions each disk slice into \textit{cylinder groups},
+which are composed of \textit{disk cylinders} \parencite{oracle2010}. Each disk cylinder is further subdivided into
+\textit{logical blocks} assigned with an address to manage file organization within the cylinder group \parencite{oracle2010}.
+There are four types of blocks according to \textcite{oracle2010}:
+
+\begin{itemize}
+	\item \textbf{Boot Block}: The boot block stores the data necessary in booting the operating system.
+	      The boot block is typically located at the first cylinder group or \textit{group 0} and occupies around 8K in
+	      a data slice. When the filesystem is not used for booting the system, the boot block is left blank
+
+	\item \textbf{Superblock}: The superblock stores information about the filesystem, which can include the size and
+	      status of the filesystem, the name of the filesystem and its disk volume, the size of the logical blocks, when the
+	      filesystem is last updated, the size of the cylinder groups, how many data blocks are stored in a cylinder group,
+	      the current state of the filesystem, and the path to the last mounted device. The superblock is typically located
+	      at the start of each disk slice. The superblock is often replicated in a cylinder group since it contains critical
+	      information crucial in managing the filesystem. Whenever the superblock or the disk slice holding the superblock
+	      gets corrupted or damaged, the information about the filesystem can still be retrieved from its replicas.
+	      The replicas are typically offsetted by a specific amount depending on the type of the disk. For multi-platter disk
+	      drives for instances, the offsets are configured such that a replica of the superblock is present in each platter.
+	      The superblock also contains a summary information block, which notes the changes in the filesystem and the number
+	      of inodes, directories, and storage blocks that are currently used in the filesystem. The summary information
+	      block is not replicated, hence it can only be found with the main superblock.
+
+	\item \textbf{Inode}: The inode stores information about a file, which can include the type of the file, the
+	      permissions set on the file, hard links to the file, the owner of the file, the group where the file belongs,
+	      the file size, disk-block addresses where the file is stored, and when the file was last created, modified,
+	      and accessed. It is important to note that the inode does not store the name of the file, as it is commonly
+	      stored in the directory the file is at.
+
+	\item \textbf{Storage/Data Block}: The storage block contains the data associated with a file. The sizes of the
+	      storage blocks are known when the filesystem is first created. Storage blocks can be allocated to either a block
+	      size of 8K or a fragment size of 1K. Storage blocks can either store the contents of a file of the inode
+	      entries with their corresponding file names of a directory.
+\end{itemize}
+
+UFS2 is commonly used in older versions of FreeBSD. In newer versions, however, the \textbf{Zettabyte File System (ZFS)}
+is widely used. One key characteristic of ZFS is that it is both a filesystem and a volume manager \parencite{freebsd_zfs},
+which allows it to organize files and manage disks in one system.
+The ZFS filesystem is composed of \textit{Data Management Unit (DMU)} objects \parencite{siebenmann2018},
+which can represent a file, directory, disk volume, or internal metadata \parencite{openzfs_docs_dnode}. Each DMU object
+is defined by a \textit{dnode}, which holds the metadata of the object \parencite{openzfs_docs_dnode}. DMU objects are represented
+as a tree of block pointers on disk \parencite{openzfs_docs_dnode}. The root node is a \texttt{dnode\_phys\_t} structure
+which contains the object metadata. The metadata typically consists of the object type, the number of levels in the
+tree hierarchy of the object, and the amount of memory space used by the object \parencite{openzfs_docs_dnode}.
+ZFS also utilizes a \textit{Dataset and Snapshot Layer (DSL)} which manages the filesystems and its clones and snapshots
+\parencite{openzfs_docs_dnode}. The DSL typically consists of DSL directories and datasets which are stored as dnodes
+in a special object set called the \textit{Meta Object Set} \parencite{openzfs_docs_dnode}. Each DSL directory or dataset
+in a tree in itself \parencite{openzfs_docs_dnode}.
+
+In NetBSD, the Fast File System (FFS), Log-Structured File System (LFS), and Chip File System (CHFS) were officially adopted
+on different versions of NetBSD.
+Both \textbf{Fast File System (FFS)} and \textbf{Log-Structured File System (LFS)} share a lot of similarities with UFS in
+terms of its organization. For instance, the filesystem subdivides the disk into \textit{cylinder groups}
+\parencite{arpaci_dusseau2023}. Each cylinder in a cylinder group is a set of tracks that share the same distance
+from the center \parencite{arpaci_dusseau2023}. Similar to UFS, each cylinder group contains a superblock with its
+replicas, a list of inodes, and the data blocks \parencite{arpaci_dusseau2023}. Additionally, the filesystem stores
+the inode and data bitmaps before the inodes and data blocks. The bitmaps essentially keep track of where the inodes
+and data blocks are allocated in the group. In LFS, each group or segment contains a summary block just like with UFS
+\parencite{rosenblum1991}. However, summary blocks can be chained together in a linked list, with a summary block
+holding a pointer to the next summary block \parencite{rosenblum1991}. The filesystem then read these summary block
+as one long linear log \parencite{rosenblum1991}. NetBSD also adopts the \textbf{Chip File System (CHFS)},
+which was primarily designed for flash devices \parencite{chfs_about2018}. CHFS utilizes an intermediary layer between
+the filesystem and the media device called the \textit{eraseblock-handler (EBH)}. EBH essentially maps the physical eraseblocks
+(PEB) of the device to the logical eraseblocks (LEB) managed by the filesystem.
+
+It is evident that the approaches of FreeBSD's ZFS and NetBSD's FFS in file management is largely different. NetBSD's FFS
+follows the standard approach of using cylinder groups in a single pre-partitioned disk slice. FreeBSD's approach is rather
+different by unifying file and disk management into a single system. An advantage of FFS is that it exhibits high cross-platform
+compatibility primarily because of its simplicity. The \textit{dnode/object set/DSL} hierarchy model of ZFS is complex.
+Considering the additional features that ZFS comes with, it might not be well-supported on constrained platforms or
+architectures.
+
+\subsection{File Access Methods and Operations} \label{file-access-methods} % comparison
+
+In FreeBSD, the VFS API provides two kinds of operations for working with files: \textit{path-based operations} and
+\textit{file-descriptor operations} \parencite{jensen2021}. The \texttt{open()} function can be used to retrieve a file
+descriptor given a path when the \texttt{O\_PATH} flag is specified \parencite{jensen2021}.
+\texttt{open()} returns a non-negative integer if the operation is
+successful \parencite{freebsd_open}. The returned integer corresponds to the file descriptor, which is the lowest-numbered
+file descriptor that is currently not being used by the system \parencite{freebsd_open}. On failure, it returns \texttt{-1}
+\parencite{freebsd_open}. File descriptors are managed by the \texttt{filedesc} struct \parencite{freebsd_filedesc_h}.
+The struct contains \texttt{fd\_files} of type \texttt{struct fdescenttbl*}, which is a table of files that are currently
+opened; \texttt{fd\_freefile} of type \texttt{int}, which points to the next approximately free file in the files table; and
+\texttt{fd\_files->fd\_nfiles}, which tracks the current number of allocated slots in the files table \parencite{freebsd_filedesc_h}.
+File descriptors can be referred by a process with the \texttt{proc} struct's \texttt{p\_fd} attribute when a process is opening a
+file \parencite{freebsd_proc_h}. FreeBSD supports a variety of file descriptor data types. File descriptors of files have a
+type of \texttt{DTYPE\_VNODE} \parencite{freebsd_file_h}. Other file descriptor types include \texttt{DTYPE\_SOCKET} for sockets,
+\texttt{DTYPE\_PIPE} for pipes, \texttt{DTYPE\_MQUEUE} for POSIX message queues, \texttt{DTYPE\_SEM} for POSIX semaphores,
+\texttt{DTYPE\_DEV} for device-specific file descriptors, and \texttt{DTYPE\_PROCDESC} for process descriptors \parencite{freebsd_file_h}.
+File descriptors are typically used using the \texttt{AT\_EMPTY\_PATH} flag, which is specified on the \texttt{at()} set of syscalls
+\parencite{jensen2021}. The syscalls can then perform operations on the file specified by its file descriptor when passed on the
+\texttt{dirfd} argument and the path argument is set to an empty string literal \parencite{jensen2021}.
+
+NetBSD supports high-level operations for working with vnodes. For instance, the function \texttt{vn\_open()} is used for common
+open operations on the vnode \parencite{netbsd_vnopen}. For vnode close operations, the function \texttt{vn\_close()} is used
+\parencite{netbsd_vnopen}. \texttt{vn\_open()} can either trigger the \texttt{VOP\_CREATE()} operation, which creates a new file,
+or the \texttt{VOP\_OPEN()}, which opens an existing file, depending on the flags passed \parencites{netbsd_vnopen}{netbsd_vopopen}.
+\texttt{vn\_open()} can either return a vnode or a file descriptor number \parencite{netbsd_vnopen}. If it returns a vnode, it locks the
+vnode and is returned in the \texttt{ret\_vp} argument \parencite{netbsd_vnopen}. If it returns a file descriptor number, it is returned
+instead in the \texttt{ret\_fd} argument \parencite{netbsd_vnopen}. For file access, the \texttt{open()} and \texttt{openat()}
+functions are implemented for opening or creating files, passing in an absolute path for \texttt{open()} and a relative path for
+\texttt{openat()} \parencite{netbsd_open}. Files can be opened in either read mode, write mode, execute mode, or reading and writing
+mode with the \texttt{O\_RDONLY}, \texttt{O\_WRONLY}, \texttt{O\_EXEC}, and \texttt{O\_RDWR} respectively \parencite{netbsd_open}.
+Additional flags can be passed, which include \texttt{O\_APPEND} for appending a file, \texttt{O\_CREAT} for creating a file if
+it does not exist yet, and \texttt{O\_DIRECTORY} for accessing directories \parencite{netbsd_open}. All files that are currently
+being used are being referenced in a file descriptor table \parencite{netbsd_file}. Each entry in the file descriptor table
+holds a count of references with the \texttt{f\_count} attribute in the \texttt{file} struct \parencite{netbsd_file}. The count gets
+incremented when new references are added and decremented when the \texttt{close()} function is called \parencite{netbsd_file}.
+The file is eventually freed when the references count reaches 0 \parencite{netbsd_file}. The \texttt{f\_offset} attribute specifies
+the number of bytes added for each read or write operation \parencite{netbsd_file}. This offset cannot be stored in the file's inode
+since multiple processes can open the same file each with their own offsets \parencite{netbsd_file}. Write operations are handled
+by the \texttt{vn\_write()} function \parencite{netbsd_vnwrite}. When the flag \texttt{FOF\_UPDATE\_OFFSET} is set, the position
+will be updated when read or write operations are completed \parencite{netbsd_vnwrite}. Files can be mapped into their respective
+sectors in memory with the \textit{Unified Buffer Cache (UBC)} \parencite{netbsd_ubc}. The mapping operation is done using \texttt{mmap()}
+\parencite{netbsd_mmap}. Whenever a mapping operation will be performed, the \texttt{VOP\_MMAP} function is called to notify the
+filesystem \parencite{netbsd_vnodeops}.
+
+It can be seen from the two systems
+
+\subsection{Directory Structures} \label{dir-struct} % comparison
+
+The filesystems in both FreeBSD and NetBSd adopts a hierarchical tree-based structure reminiscent to UNIX filesystems. The root directory of the
+filesystem is the \texttt{/} directory \parencite{freebsd_dir_struct}. Table \ref{root-subdirs} lists the common subdirectories of the
+root directory according to \textcite{freebsd_dir_struct}. Additional filesystems can be integrated with the root filesystem using
+mount points \parencite{freebsd_dir_struct}. The subdirectories \texttt{/cdrom}, \texttt{/mnt} \texttt{/tmp}, \texttt{/usr}, and \texttt{/var}
+serve as common mount points of the filessytem \parencite{freebsd_dir_struct}. The children filesystems and the mount points they are
+mounted are recorded in the \texttt{/etc/fstab} directory \parencite{freebsd_dir_struct}. The \texttt{namei()} function handles
+pathname resolutions \parencite{freebsd_namei}. \texttt{namei()} usually returns a vnode, either locked or unlocked, of the resolved
+path \parencite{freebsd_namei}. The \texttt{namei()} function is often initialized with \texttt{NDINIT()} \parencite{freebsd_namei}.
+For instance, we can specify the operation \texttt{namei()} will perform by passing either \texttt{LOOKUP},
+\texttt{CREATE}, \texttt{DELETE}, and \texttt{RENAME} to the \texttt{op} argument \parencite{freebsd_namei}.
+The resolved directory and its vnode being initialized to \texttt{namei()} is pointed by the \texttt{ndp} attribute \parencite{freebsd_namei}.
+This increments the reference count of the vnode \parencite{freebsd_namei}. Decrementing the reference count would need to be done
+by either \texttt{vrele()} or \texttt{vput()} depending on whether the \texttt{LOCKLEAF} flag was set or not \parencite{freebsd_namei}.
+FreeBSD perform file lookups with the \texttt{VOP\_LOOKUP()} function \parencite{freebsd_voplookup}. It specifically searches for a
+component in a specified directory path \parencite{freebsd_voplookup}. From a component, it returns a pointer to a locked vnode
+\parencite{freebsd_voplookup}. This can be one of the sources of deadlocks, assuming that the filesystem does not follow a strict
+tree hierarchy, since this process is rather complicated and is very centralized \parencite{freebsd_voplookup}.
+
+\begin{table}[!htb]
+	\centering
+	\begin{tabular}{|c|p{0.6\textwidth}|}
+		\hline
+		\textbf{Subdirectory} & \textbf{Description}                                                                                                   \\
+		\hline\hline
+		\texttt{/bin}         & Contains utilities for both single- and multi-user environments                                                        \\ \hline
+		\texttt{/boot}        & Contains programs and configurations necessary for booting up the system                                               \\ \hline
+		\texttt{/dev}         & Contains device nodes, which are entrypoints to devices that are connected to the system \parencite{freebsd_intro}     \\ \hline
+		\texttt{/etc}         & Contains system configuration files and scripts                                                                        \\ \hline
+		\texttt{/mnt}         & Serves as a temporary mount point                                                                                      \\ \hline
+		\texttt{/proc}        & Mounts the \textit{process file system}, which displays the process table of the filesystem \parencite{freebsd_procfs} \\ \hline
+		\texttt{/rescue}      & Contains programs needed for system recovery during emergencies                                                        \\ \hline
+		\texttt{/root}        & Acts as a home directory for the \texttt{root} account                                                                 \\ \hline
+		\texttt{/sbin}        & System programs for both single- and multi-user environments                                                           \\ \hline
+		\texttt{/tmp}         & Contains temporary files that are not preserved on system reboot                                                       \\ \hline
+		\texttt{/usr}         & Contains the user utilities and tools                                                                                  \\ \hline
+		\texttt{/var}         & Contains multi-purpose logs and spool files                                                                            \\ \hline
+	\end{tabular}
+	\caption{Common Subdirectories of the Root Directory in UNIX Filesystems \parencite{freebsd_dir_struct}}
+	\label{root-subdirs}
+\end{table}
+
+For NetBSD specifically, directory entry lookups are often accelerated with the use of \textbf{name lookup caches} \parencite{netbsd_namecache}.
+Whenever a pathname resolution is performed, it first checks the name lookup cache for an entry. If an entry exists, it retrieves the
+associated entry in the cache. If an entry does not exist, it creates a new entry in the name lookup cache \parencite{netbsd_namecache}.
+Cache lookups are performed by calling the \texttt{cache\_lookup()} function \parencite{netbsd_namecache}. The result of the cache lookup
+is stored in the \texttt{vvp} argument \parencite{netbsd_namecache}. \texttt{cache\_lookup()} returns 0 if it encounters a cache miss
+\parencite{netbsd_namecache}. It stores the resolved vnode in \texttt{vpp} for a positive cache hit \parencite{netbsd_namecache}. On
+a negative hit, \texttt{vpp} is set to \texttt{NULL} \parencite{netbsd_namecache}. The \textit{Least Recently Used (LRU)} policy
+is adopted by the name lookup cache so that entries that are frequently retrieved continue to stay in the cache \parencite{netbsd_namecache}.
+Operations on the name lookup cache table are handled by the \texttt{cache\_enter()}, \texttt{cache\_purge()}, and \texttt{cache\_purgevfs()}
+functions \parencite{netbsd_namecache}. New entries are added to the cache table with \texttt{cache\_enter()} \parencite{netbsd_namecache}.
+Existing entries are removed or flushed from the cache table with \texttt{cache\_purge()} \parencite{netbsd_namecache}.
+\texttt{cache\_purgevfs()} can be used to flush an entire mounted filesystem in the table \parencite{netbsd_namecache}.
+
+\subsection{Disk Space Allocation and Free Space Management} \label{space-allocation-and-free-space} % comparison
+
+As mentioned in Section \ref{file-structure-and-hierarchy}, FreeBSD's UFS2 and NetBSD's FFS basically have the same organization. To summarize,
+the disk is partitioned into cylinder groups. Each cylinder in the cylinder group consists of a superblock,
+which contains metadata about the filesystem, the inodes, which contains metadata about files, and the
+data blocks, which contains the contents of the files described by the cylinder's inodes. The contents of
+a file are directly allocated within the first 12 logical blocks in the 15 direct addresses listed by the
+file's inode \parencite{oracle2010}. Whenever the entire contents of the file cannot fit within the 12
+logical blocks allocated for that file, the 13th address in the direct addresses list points to an indirect
+block \parencite{oracle2010}. The indirect block contains direct addresses to storage locations \parencite{oracle2010}.
+Whenever the file contents exceed the capacity of the 12 logical blocks, the remaining contents will
+be allocated to the addresses in the indirect blocks. The last two direct addresses points to a double and triple
+indirect blocks respectively. A double indirect block contains addresses to indirect blocks, which then
+points to direct addresses \parencite{oracle2010}. The same pattern applies to the triple indirect block,
+which holds addresses pointing to double indirect blocks \parencite{oracle2010}. The 15th address is only
+used on very large files, hence it is only allocated when needed. In both UFS2 and FFS, a \textit{cylinder group map}
+is allocated between the superblock and the inode block \parencite{oracle2010}. The cylinder group map
+keeps track of unused blocks in the cylinder group, which could be blocks not used as inodes or indirect address
+blocks or freed storage blocks \parencite{oracle2010}. These unused blocks are tracked to prevent fragmentation
+\parencite{oracle2010}. For FFS, one inode
+is assigned to every $4 \times frag\_size$ bytes of data where $frag\_size$ is the fragment size of the filesystem,
+which scales with the size of the filesystem \parencite{netbsd_newfs}. For instance, if
+the filesystem size is less than 20M, one inode is created for every 2K of data \parencite{netbsd_newfs}.
+
+With ZFS, the filesystem is hosted in a \textbf{ZFS storage pool} or \textbf{Zpool}, which is a set
+of disks used by the filesystem \parencite{data_recovery_glossary}. A Zpool is composed of virtual devices
+or \textit{vdevs} \parencite{openzfs_vdev}. A vdev represents a logical grouping of physical storage devices such
+as hard disks and SSDs \parencite{openzfs_vdev}. According to \textcite{openzfs_vdev}
+vdevs are arranged in a tree-structured hierarchy, with leaf vdevs,
+top-level vdevs, and a root vdev. Leaf vdevs directly point to a physical storage device. Top-level vdevs are the
+children of the root vdev, which can correspond to a single device or a logical group of leaf vdevs. The root vdev
+aggregates all the top-level vdevs into a single logical group, which is the Zpool.
+According to \textcite{openzfs_vdev}, vdevs can be one of the following types:
+
+\begin{itemize}
+	\item \textbf{Striped Disk}: consists of one or more physical storage devices that are striped together. Data can be
+	      lost in this vdev if it fails.
+
+	\item \textbf{Mirror}: stores the same data on multiple devices. Mirrors are often used for redundancy.
+
+	\item \textbf{RAIDZ}: a variation of RAID-5 \parencite{openzfs_raidz}; provides fault tolerance by utilizing parity.
+	      RAIDZ can range from RAIDZ1 to RAIDZ 3. RAIDZ3 requires more disks than RAIDZ1 and RAIDZ2 but provides fault tolerance
+	      on more drives than the two RAIDZ levels.
+
+	\item \textbf{dRAID}: short for \textit{Distributed RAID}; provides a more distributed parity, allowing for quicker
+	      recoveries after a drive fault.
+\end{itemize}
+
+\noindent
+vdevs can be of auxiliary types such as \textit{Spare}, \textit{L2ARC}, \textit{SLOG}, \textit{Special}, and \textit{Dedup},
+which have their own special uses. For instance, a Spare vdev is often used to replace a failed drive from another vdev.
+A \textit{ZFS dataset} is automatically created in the creation of a Zpool \parencite{pasek2025}. A ZFS dataset handles
+the organization of data within the filesystem \parencite{45drives}. ZFS allows creation of multiple ZFS datasets with
+their own configuration such as level of compression, mountpoints, and snapshots \parencite{pasek2025}. By default,
+the size of a record is set to 128K \parencite{pasek2025}. Compression is also not enabled by default \parencite{pasek2025}.
+However, as mentioned earlier, these can be customized depending on the workload. According to \textcite{pasek2025},
+for a general-purpose file server, a record size of 128K is recommended. For media archiving and backup workloads,
+a record size of 1M is recommended \parencite{pasek2025}. While for database and VM disk workloads, a record size
+of 16K is suggested \parencite{pasek2025}.
+
+ZFS makes use of space maps to manage free disk space. The vdev is first partitioned into hundreds of chunks of
+manageable size called \textit{metaslabs} \parencite{david2012}. Each metaslab is associated with a space map. A
+\textit{space map} logs the allocation and deallocation activity \parencite{david2012}. The filesystem reads from
+the logs to simulate the allocation activity into an AVL tree representing the free space of a vdev \parencite{david2012}.
+At the same time, the filesystem condenses the space map by cancelling out allocation-free pairs \parencite{david2012}.
+This way, the contiguous regions of memory that are currently allocated is tracked \parencite{siebenmann2015}.
+With a space map, the filesystem can perform random frees just as fast as sequential frees since the amount of disk
+space to be freed can be determined by the location of the metaslab listed in the space map offsetted by an extent
+\parencite{david2012}.
+
+\subsection{File Protection and Security} \label{file-protection-security} % comparison
+
+Both FreeBSD and NetBSD extend \textit{owner/group/other} permission model for file access standard in UNIX systems with
+POSIX's Access Control Lists. An \textbf{Access Control List (ACL)} extends the permission model by incorporating
+a per-file or per-directory approach of access control \parencite{freebsd_security}. Each entry in the ACL consists of a user or group with
+the associated permissions for a file or directory \parencite{freebsd_security}. FreeBSD offers the \texttt{getfacl(1)} and \texttt{setfacl(1)}
+commands for managing the ACL \parencite{freebsd_security}. For FreeBSD, ZFS also introduces a more granular approach to ACLs,
+which is the \textit{NFSv4 ACL} \parencite{oracle_acl2010}. The NFSv4 implementation of the ACL is more reminiscent to
+NT's approach and offers a richer set of access permissions and inheritance semantics in declaring how these parmissions are
+applied \parencite{oracle_acl2010}. For NetBSD, ACLs along with \textbf{extended attributes (EA)} are supported on later versions
+of NetBSD, starting at NetBSD 10 \parencite{netbsd_ea_acl}. Furthermore, only the syntax of the ACL is known to the vnodes,
+which are representations of files and directories on disk in FFS \parencite{netbsd_acl}. It is also possible for a file or
+directory to be associated with zero or multiple ACLs \parencite{netbsd_acl}.
+
+FreeBSD extends the read/write/execute permissions with \texttt{setuid}, \texttt{setgid}, and \texttt{sticky} permissions
+\parencite{freebsd_permissions}. \texttt{setuid} replaces the \texttt{x} bit of the owner's permissions with \texttt{s},
+which essentially allows the owner to use utilities that need higher privileges \parencite{freebsd_permissions}. This is often
+enabled when changing user passwords with \tettt{passwd()} \parencite{freebsd_permissions}. \texttt{setgid} performs the same
+operation as \texttt{setuid} on the group's permissions instead of the owner's \parencite{freebsd_permissions}. \texttt{sticky}
+only allows file deletions by the file owner \parencite{freebsd_permissions}. This permission is usually set on a directory
+\parencite{freebsd_permissions}. Additionally, \textit{file flags} extends the set of permissions only for files \parencite{freebsd_basics}.
+They can be modified using the \texttt{chflag} command \parencites{freebsd_basics}{freebsd_chflags}. File flags include
+the \textit{undeletable} flag which can be set by \texttt{sunlink} to prevent a file to be deleted even by the root user,
+the \textit{user append-only} flag which can be set by \texttt{uappend} to only allow the user to perform file appends,
+and the \textit{user immutable} flag which can be set by \texttt{uchg} to make the file immutable \parencite{freebsd_chflags}.
+FreeBSD also offers \textit{secure levels} that can be adjusted with the \texttt{kern.securelevel} state variable
+\parencite{freebsd_securelevel}. Table \ref{securelevel} lists the different secure levels that can be set by the user according to
+\textcite{freebsd_securelevel}. By default, \texttt{securelevel} is set to \texttt{-1}.
+
+\begin{table}[!htb]
+	\centering
+	\begin{tabular}{|c|c|p{0.5\textwidth}|}
+		\hline
+		\textbf{Secure Level} & \textbf{Mode}                      & \textbf{Description}                                                                                                                                                                                         \\
+		\hline\hline
+		\texttt{-1}           & \textit{Permanently insecure mode} & The system is in insecure mode.                                                                                                                                                                              \\ \hline
+		\texttt{0}            & \textit{Insecure mode}             & Permissions are enforced when performing read/write operations to devices. Immutable and append-only flags can also be disabled.                                                                             \\ \hline
+		\texttt{1}            & \textit{Secure mode}               & Immutable and append-only flags cannot be disabled. Specific mounted filesystems such as \texttt{/dev/mem}, \texttt{/dev/kmem}, and \texttt{/dev/io} cannot be accessed or only accessible with restrictions \\ \hline
+		\texttt{2}            & \textit{Highly secure mode}        & Same restrictions in secure mode are enforced in this level. Additionally, mounted disks cannot be written. Kernel time changes are also restricted to within a second.                                      \\ \hline
+		\texttt{3}            & \textit{Network secure mode}       & Same restrictions in highly secure mode are enforced in this level. Additonally, IP packet filter rules and \texttt{dummynet()} or \texttt{pf()} configuration cannot be modified.                           \\ \hline
+	\end{tabular}
+	\caption{Secure Levels in FreeBSD \parencite{freebsd_securelevel}}
+	\label{securelevel}
+\end{table}
+
+In NetBSD, the permissions of a file can be checked with \texttt{VOP\_ACCESS()} \parencites{netbsd_vnodeops}{netbsd_internals}.
+\texttt{VOP\_ACCESS()} can check if a file has the read, write, or execute permissions by passing in the \texttt{VREAD}, \texttt{VWRITE},
+or \texttt{VEXEC} constants to the \texttt{mode} argument respectively \parencite{netbsd_vnodeops}. NetBSD also adopts the
+\textbf{Role-Based Access Control (RBAC)} introduced by \textcite{crooks2009}. The RBAC model splits the privileges of a super user into
+a total of 57 separate roles \parencite{crooks2009}.
+
+\subsection{Reliability and Crash Recovery} \label{reliability-and-crash-recovery} % comparison
+
+In FreeBSD's UFS2 and NetBSD's FFS in the pre-6.0 releases, a \textbf{soft updated dependency tracking system} is employed for crash
+recovery, serving as an alternative
+to the journaled-filesystem approach \parencites{ganger1994}{mckusick1996}{netbsd_6.0}.
+Soft updates ensure the integrity of file system metadata in an event of a crash by eliminating inconsistencies in the filesystem
+on-disk \parencite{mckusick_ganger1999}. This is done by preventing metadata writes that renders the filesystem inconsistent and
+enforcing rollbacks on metadata blocks that rely on potentially non-flushed blocks on write \parencite{mkcusick_ganger1999}.
+With this approach, the operating system only needs to perform a background walk on the filesystem to free any orphaned space
+\parencite{mckusick_ganger1999}. \textcite{mckusick2012} proposed an improvement to the
+soft-update tracking system by implementing a journaling mechanism that keeps track of the inconsistencies produced by the
+soft-update tracking system \parencite{mckusick2012}. This eliminates the need for a recovery operation after a crash, which
+can be expensive \parencite{mckusick2002}.
+In newer releases of NetBSD, FFS adopts \textbf{Write Ahead Physical Block Logging (WAPBL)} as its primary metadata journaling mechanism
+for crash recovery \parencites{biancuzzi2010}{mcneill2008}. This eliminates the need to run \texttt{fsck} to check for any
+inconsistencies on system boot in an event of a crash \parencite{netbsd_wapbl}. Instead, the operating system only needs to
+simulate the logged transactions and correct any encountered inconsistencies \parencite{netbsd_wapbl}.
+
+FreeBSD's ZFS employs multiple strategies to ensure data integrity and aid in crash recovery. For instance, it implements
+\textbf{copy on writes (COW)}, which creates \textit{snapshots} of the same file on every write \parencites{pasek2025}{freebsd_zfs}.
+Snapshots only keep track of the difference between each version of the file, which makes them space-efficient \parencite{freebsd_zfs}.
+Snapshots also provide a way of making backups of the filesystem \parencite{freebsd_zfs}. Considering the efficiency that
+snapshots bring, it makes it faster to restore previous snapshots than whole backups \parencite{freebsd_zfs}. Data integrity is
+performed using \textbf{checksums}. Each data is associated with its checksum, which is generated when the data is stored in the disk
+\parencite{freebsd_zfs}. The filesystem then recalculates the checksum on every read and performs error corrections using
+redundant data if the recalculated checksum does not match with the checksum associated with the data \parencite{freebsd_zfs}.
+Redundant data is produced with \textbf{RAIDZ}, which utilizes parity to create redundant copies of the same data across
+different disks \parencite{freebsd_zfs}. As mentioned in Section \ref{file-structure-and-hierarchy}, RAIDZ has three different levels: RAIDZ1,
+RAIDZ2, and RAIDZ3. A higher level of RAIDZ corresponds to a higher level of parity at the expense of having more disk requirements
+\parencites{freebsd_zfs}{openzfs_vdev}. ZFS also implements transaction logging using the \textbf{ZFS Intent Log}, which
+logs write transactions and stores them to the main pool devices \parencite{khurshid2025}. This allows the filesystem to replay the
+logged transactions during system recovery \parencite{khurshid2025}.
+
+
+\subsection{Disk Scheduling and I/O Management} \label{disk-scheduling-io} % comparison
+
+Earlier releases of FreeBSD uses primitive disk schedulers such as elevator and C-LOOK schedulers \parencite{rizzo2009}.
+\textcite{rizzo2009} later proposed utilizing the \textbf{GEOM architecture} in disk scheduling, which posed several advantages
+such as ease of implementation of disk schedulers and reusability of existing mechanisms for locking and configuration.
+GEOM uses a graph of GEOM modules to perform arbitrary manipulations of disk I/O requests or \textit{bio} \parencite{rizzo2009}. Disk I/O
+requests enters from the provider nodes, which are connected to the filesystem, and exit to the consumer nodes, which
+goes straight to the device driver \parencite{rizzo2009}. By default, GEOM implements a simple FIFO disk I/O scheduler
+\parencite{losh2015}. The GEOM layer is connected to a \textbf{Common Access Method (CAM)} subsystem, which handles access of
+media devices \parencite{losh2015}. Each disk driver below the GEOM layer implements their own scheduling policies
+\parencite{losh2015}. CAM can support SCSI- and ATA-based disks with its two peripheral drivers for each of the disks
+\parencite{losh2015}. Both peripheral drivers schedule disk I/O requests by scheduling as many \texttt{BIO\_READ}, \texttt{BIO\_WRITE},
+or \texttt{BIO\_FLUSH} commands as it can \parencite{losh2015}. However, if it encounters a \texttt{BIO\_DELETE} command
+and no other command is currently active, it combines as much \texttt{BIO\_DELETE} commands as it can and schedules them.
+While the scheduling policies adopted on the GEOM layer and the CAM subsystem is sufficient for most of its users,
+\textcite{losh2015} and the people working in Netflix discovered weaknesses to these algorithms, which include uneven I/O latency
+if the system has long-read latency tails, no enforcement of priority, long latencies as a result of nonexistent deadlines,
+and no way of balancing writing performance and reading latency.
+
+In NetBSD, disk I/O requests are managed by a \textbf{buffer queue subsystem or \texttt{bufq}}, which manages device buffer
+queues \parencite{netbsd_bufq}. The buffer queue subsystem provides several functions for manipulating the device buffer
+queues, which includes \texttt{bufq\_put()} for adding an I/O request to the buffer queue and \texttt{bufq\_get} for retrieving
+an I/O request from the buffer queue \parencites{netbsd_bufq}{chung2002}. NetBSD supports four buffer queue scheduling
+strategies: \texttt{BUFQ\_FCFS}, \texttt{BUFQ\_DISKSORT}, \texttt{BUFQ\_PRIOCSCAN}, and \texttt{BUFQ\_READPRIO}
+\parencites{netbsd_bufq}{netbsd_sysctl}{netbsd_options}. \texttt{BUFQ\_FCFS} is a simple implementation of the FCFS disk
+scheduling policy. \texttt{BUFQ\_DISKSORT} is a one-way variant CSCAN disk scheduling policy by scheduling ascending
+disk I/O requests. \texttt{BUFQ\_CSCAN} implements a CSCAN scheduling policy \parencite{netbsd_options}. \texttt{BUFQ\_READPRIO}
+prioritizes disk read requests over disk write requests, which can be an ideal options for systems that frequently receives
+disk write requests in one disk locality \parencite{netbsd_options}. By default, the \texttt{BUFQ\_FCFS} and \texttt{BUFQ\_DISKSORT}
+are implemented in the kernel \parencite{netbsd_bufq}. When an I/O operation from a buffer queue is completed, the \texttt{biodone()}
+function is called \parencite{chung2002}. NetBSD also implements a \texttt{biowait()} function that waits for an I/O operation
+in a buffer queue to be completed \parencite{chung2002}. This is usually called inside a \texttt{bread()} or \texttt{bwrite()}
+functions which allocate a buffer and release a modified buffer respectively \parencite{chung2002}.
+
+\subsection{Performance Considerations} \label{performance-considerations}
+
+FreeBSD's ZFS support three caching strategies: ARC, L2ARC, and SLOG \parencite{khurshid2025}. The
+\textbf{ARC} or the \textbf{Adaptive Replacement Cache} is an adaptive read caching mechanism that resides in the system's main
+memory \parencite{khurshid2025}. It aims to balance between recency of cache entries and frequency of access to the entries
+\parencite{khurshid2025}. It competes with the kernel and user applications for memory \parencite{khurshid2025}. ARC balances
+between the four caching lists according to \textcite{khurshid2025}:
+
+\begin{itemize}
+	\item \textbf{Most Recently Used (MRU)}: keeps a list of data that is not frequently accessed
+
+	\item \textbf{Most Frequently Used (MFU)}: keeps a list of data that is frequently accessed
+
+	\item \textbf{Ghost MRU}: contains metadata on the recently removed entries in the MRU cache list
+
+	\item \textbf{Ghost MFU}: contains metadata on the recently removed entries in the MFU cache list
+\end{itemize}
+
+Both Ghost MRU and Ghost MFU do not cache actual data, but informs ARC on the removed cache entries, which allows the algorithm
+to adjust the memory allocation for new entries \parencite{khurshid2025}. This self-tuning mechanism increases the frequency of
+future cache hits, which makes the algorithm highly efficient for a variety of workloads \parencite{khurshid2025}. A similar
+caching mechanism is also applied when accessing fast secondary disk devices with the \textbf{L2ARC} cache \parencite{khurshid2025}.
+The L2ARC cache typically stores data that has been evicted or will eventually be evicted by the main cache \parencite{khurshid2025}.
+Instead of actually flushing the entry, ARC keeps a pointer to where the evicted memory block is stored in the L2ARC device
+\parencite{khurshid2025}. This makes accesses to recently evicted entries more efficient. It is possible for multiple L2ARC devices
+to be added to the system, as long as there is sufficient main memory to store the block pointers without compromising the speed
+of the system due to too many block pointers in RAM \parencite{khurshid2025}. For write operations, the \textbf{Separate Log Device (SLOG)}
+is often used \parencite{khurshid2025}. SLOG increases the latency for synchronous write requests considering that they need to
+be acknowledge right away \parencite{khurshid2025}. However, it does not improve the disk request throughput. \parencite{khurshid2025}.
+Hence, SLOG can achieve an improved performance for low-latency disk devices \parencite{khurshid2025}. ZFS also allows for
+performance-tuning. For instance, the memory usage for the ARC cache can be tuned with the \texttt{arc\_max} and \texttt{arc\_min}
+tunables \parencite{khurshid2025}. Frequency of cache writes to the L2ARC device can be adjusted with the \texttt{l2arc\_feed\_min\_ms}
+and \texttt{l2arc\_feed\_secs} tunables \parencite{khurshid2025}. The \texttt{l2arc\_write\_max} tunable can also be modified to
+adjust the maximum cache write rate of the L2ARC device, which can avoid wearing out the device from writing data that will
+not be used to the cache \parencite{khurshid2025}. The filesystem itself can also be tuned to increase either latency or throughput
+with the \texttt{logbias} property \parencite{lucas2015}. By default, \texttt{logbias} is set to \textit{latency} to ensure that the data
+is quickly synced to the disk \parencite{lucas2015}. However, it can be set to \textit{throughput}, which can be beneficial when
+accessing large files \parencite{lucas2015}. The \texttt{vfs.zfs.prefetch.disable} can also be set to either enable or disable
+prefetch by setting \texttt{vfs.zfs.prefetch.disable} to \texttt{1} or \texttt{0} respectively \parencite{freebsd_zfs}. Prefetching
+allows bigger ARC blocks to be read than requested, which can lead to decreased performance if the workload contains a lot of
+random reads to the cache \parencite{freebsd_zfs}.
+
+NetBSD's FFS unifies its filesystem and virtual memory caches into a single subsystem called the \textbf{Unified Buffer Cache (UBC)}
+\parencite{silvers2000}. The UBC addresses the inefficiency and poor flexibility brought by the two separate caching mechanisms in
+the VM and I/O subsystems \parencite{silvers2000}. UBC stores accessed data from \texttt{read()/write()} and \texttt{mmap()} calls
+to a page cache \parencite{silvers2000}. Read operations retrieve data from the page cache instead of the buffer cache \parencite{silvers2000}.
+UBC also maps pages in the page cache to its corresponding address in memory \parencite{silvers2000}, as previously mentioned in
+Section \ref{file-access-methods}. Page entries can be added and retrieved with the \texttt{VOP\_GETPAGES()} and \texttt{VOP\_PUTPAGES()}
+functions respectively \parencite{silvers2000}. Additionally, \texttt{VOP\_GETPAGES()} needs to allocate data that is not yet stored
+in the cache and \texttt{VOP\_PUTPAGES()} needs to write the dirty pages back to the disk; both requires the initiation of an I/O
+operation \parencite{silvers2000}.
+
+
+\subsection{Summary}

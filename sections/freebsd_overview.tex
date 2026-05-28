@@ -1,0 +1,74 @@
+\subsection{FreeBSD}
+
+FreeBSD is a \textbf{free and open-source Unix-like system} that is first conceptualized and developed by Nate Williams,
+Rod Grimes, and Jordan Hubbard in 1993 \parencite{freebsd_intro}. FreeBSD is a direct descendant of \textit{386BSD}, which is
+a free and redistributable Unix-like system designed by William "Bill" Jolitz and Lynne Jolitz released in 1992 \parencite{bentson1995}.
+386BSD was designed specifically for Intel 80386-based IBM personal computers \parencites{mckusick1999}{bentson1995}.
+It was also the first Unix-like system to be freely distributable on home computers \parencite{bentson1995}.
+Shortly after, the development of 386BSD has slowed down, mainly because it has been neglected by Bill Jolitz for
+over a year \parencite{mckusick1999}. This brought problems and bugs in the system that were not addressed by
+the official patchkit system \parencite{freebsd_intro}. From this, the \textit{Unofficial 386BSD Patchkit} was formed \parencite{jude2020}
+as an alternative to the official patchkit system. Eventually, there was a disagreement between the Jolitz and
+the maintainers of the unofficial patchkit regarding the future directions of 386BSD \parencite{jolitz2014}.
+This then led Williams, Grimes, and Hubbard, which were the remaining maintainers of Unofficial 386BSD Patchkit,
+to develop their own iteration of 386BSD now known as FreeBSD \parencite{freebsd_intro}. FreeBSD was coined by David Greenman
+in the 19th of June 1993 \parencite{greenman1993}. Other name suggestions that were brought up in the email sent by
+\textcite{greenman1993} include \textit{"BSDFree86"} and \textit{"Free86BSD"}.
+
+FreeBSD is mainly inspired by \textit{Unix}, which was originally developed by Ken Thompson and Dennis Ritchie
+at AT\&T Bell Laboratories \parencite{urban_tiemman2001}. It was originally written in assembly and later rewritten in C,
+which was designed by the two same developers \parencite{urban_tiemman2001}. Unix was based on \textit{Multics}, which
+is an operating system designed for the GE-645 mainframe \parencite{freebsd_intro} which introduced concepts foundational in
+the development of modern-day operating systems such as dynamic linking, hierarchical file system, and memory-mapped files
+\parencite{freebsd_intro}. FreeBSD also carried the legacy of \textbf{Berkeley Software Distribution (BSD)}, founded by
+University of California, Berkeley Computer Systems Research Group (CSRG) in the 1970s \parencite{freebsd_torchbearer}.
+This legacy is carried by adopting the \textbf{BSD License}, which allows FreeBSD to be redistributed and/or modified
+\parencite{opensource2011}. The distribution of BSD to various academic institutions also sparked the open-source
+movement \parencite{jude2020}, which advocated for transparency in how software is developed.
+The philosophy of open-source software has been rooted into FreeBSD ever since its direct ancestor, with the Jolitz
+using the \textit{Network Release 2} or \textit{Net/2} as a base for building 386BSD. Net/2 originated from Net/1 or
+Network Release 1, which implemented the OSI network protocol stack and several new TCP/IP algorithms for networking
+\parencite{jude2020}. With the rising costs of AT\&T software licenses, several groups are interested in developing
+systems without using AT\&T utilities. By the development of Net/2, it adopted barely any AT\&T code, which nearly made
+it freely distributable \parencite{jude2020}. However, the maintainers of FreeBSD were forced to change their Net/2
+base to a newer 4.4BSD Lite because of the Novell/Berkeley lawsuit \parencite{howard}. This lawsuit has impacted
+the development of BSD, allowing Linux to flourish instead \parencite{hubbard_andrews2002}. Nevertheless, several
+versions of BSD, which includes FreeBSD, were able to prosper and adapt in niche applications.
+
+The FreeBSD Project aims to develop a system that excels in \textbf{performance, security, and stability}
+\parencite{freebsd_faq}. According to \textcite{freebsd_intro}, the following highlights the particular
+strengths of FreeBSD:
+
+\begin{itemize}
+	\item \textbf{Open-Source License}: As previously mentioned, FreeBSD is licensed under the BSD License, which
+	      allows FreeBSD to be freely distributable with or without modifications. This allows FreeBSD to be adopted
+	      and modified for server and embedded system applications. FreeBSD is also an excellent resource in researching
+	      operating systems and other areas in computer science.
+
+	\item \textbf{Industry-Standard TCP/IP Networking}: FreeBSD implements the industry-standard networking protocols
+	      for TCP/IP, which makes it an ideal system for a wide range of networking services such as web servers, routing,
+	      firewalls, FTP servers, email servers, storage servers, virtualization servers, etc.
+
+	\item \textbf{OpenZFS Support}: FreeBSD natively supports OpenZFS, which is an open-source implementation of
+	      the ZFS filesystem. The ZFS filesystem is notable for its efficient data compression and excellent data recovery
+	      such as protection against data corruption, integrity checking, and snapshots \parencite{openzfs_project}.
+
+	\item \textbf{Security}: FreeBSD limits the privileges assigned to services, which reduces impact that might
+	      be caused by security breaches. FreeBSD also implements several security features such as the Mandatory Access
+	      Control Framework, Capsicum capability, and sandboxing mechanisms.
+
+	\item \textbf{Linux Compatibility}: A lot of packages and binaries that are designed and/or well-supported for Linux systems are
+	      compatible with FreeBSD. This includes commonly used utilities such Curl, Nginx, and FFmpeg \parencite{freebsd_ch12};
+	      development tools such as C/C++ compiler and debugging suite, Git, Apache, and SQL languages such as PostgreSQL and
+	      MySQL \parencite{freebsd_ch12}; text editors such as Vim and Emacs \parencite{freebsd_ch12}; and desktop servers,
+	      such as X11 and Wayland, and environments, such as GNOME and KDE.
+\end{itemize}
+
+With its BSD License, FreeBSD has been adopted and modified for a variety of server, desktop, and embedded systems.
+FreeBSD has been utilized in ARM and AArch64-based embedded systems for routers, firewall, and appliances \parencite{freebsd_intro}.
+Some BSD operating systems such as DragonFly BSD and GhostBSD, were derived from FreeBSD. Sony also modified FreeBSD
+to design CeliOS and Orbis OS, which were the operating systems driving the Playstation 3 and 4 respectively
+\parencites{sony2019}{larabel2013}. FreeBSD is also used to drive Network-Attached Storage (NAS) systems
+with FreeNAS or now TrueNAS \parencite{posch2024}. A significant portion of FreeBSD's code was also borrowed by Apple
+in developing the Darwin operating system, which has been the base system for modern Apple operating systems such
+as MacOS and iOS. \parencite{apple2002}.
