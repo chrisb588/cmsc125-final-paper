@@ -23,7 +23,7 @@ There are four types of blocks according to \textcite{oracle2010}:
 	      information crucial in managing the filesystem. Whenever the superblock or the disk slice holding the superblock
 	      gets corrupted or damaged, the information about the filesystem can still be retrieved from its replicas.
 	      The replicas are typically offsetted by a specific amount depending on the type of the disk. For multi-platter disk
-	      drives for instances, the offsets are configured such that a replica of the superblock is present in each platter.
+	      drives for instance, the offsets are configured such that a replica of the superblock is present in each platter.
 	      The superblock also contains a summary information block, which notes the changes in the filesystem and the number
 	      of inodes, directories, and storage blocks that are currently used in the filesystem. The summary information
 	      block is not replicated, hence it can only be found with the main superblock.
@@ -70,7 +70,7 @@ which was primarily designed for flash devices \parencite{chfs_about2018}. CHFS 
 the filesystem and the media device called the \textit{eraseblock-handler (EBH)}. EBH essentially maps the physical eraseblocks
 (PEB) of the device to the logical eraseblocks (LEB) managed by the filesystem.
 
-It is evident that the approaches of FreeBSD's ZFS and NetBSD's FFS in file management is largely different. NetBSD's FFS
+It is evident that the approaches of FreeBSD's ZFS and NetBSD's FFS in file management are largely different. NetBSD's FFS
 follows the standard approach of using cylinder groups in a single pre-partitioned disk slice. FreeBSD's approach is rather
 different by unifying file and disk management into a single system. An advantage of FFS is that it exhibits high cross-platform
 compatibility primarily because of its simplicity. The \textit{dnode/object set/DSL} hierarchy model of ZFS is complex.
@@ -136,8 +136,8 @@ The filesystems in both FreeBSD and NetBSd adopts a hierarchical tree-based stru
 filesystem is the \texttt{/} directory \parencite{freebsd_dir_struct}. Table \ref{root-subdirs} lists the common subdirectories of the
 root directory according to \textcite{freebsd_dir_struct}. Additional filesystems can be integrated with the root filesystem using
 mount points \parencite{freebsd_dir_struct}. The subdirectories \texttt{/cdrom}, \texttt{/mnt} \texttt{/tmp}, \texttt{/usr}, and \texttt{/var}
-serve as common mount points of the filessytem \parencite{freebsd_dir_struct}. The children filesystems and the mount points they are
-mounted are recorded in the \texttt{/etc/fstab} directory \parencite{freebsd_dir_struct}. The \texttt{namei()} function handles
+serve as common mount points of the filesystem \parencite{freebsd_dir_struct}. The children filesystems and the mount points they are
+mounted on are recorded in the \texttt{/etc/fstab} directory \parencite{freebsd_dir_struct}. The \texttt{namei()} function handles
 pathname resolutions \parencite{freebsd_namei}. \texttt{namei()} usually returns a vnode, either locked or unlocked, of the resolved
 path \parencite{freebsd_namei}. The \texttt{namei()} function is often initialized with \texttt{NDINIT()} \parencite{freebsd_namei}.
 For instance, we can specify the operation \texttt{namei()} will perform by passing either \texttt{LOOKUP},
@@ -145,7 +145,7 @@ For instance, we can specify the operation \texttt{namei()} will perform by pass
 The resolved directory and its vnode being initialized to \texttt{namei()} is pointed by the \texttt{ndp} attribute \parencite{freebsd_namei}.
 This increments the reference count of the vnode \parencite{freebsd_namei}. Decrementing the reference count would need to be done
 by either \texttt{vrele()} or \texttt{vput()} depending on whether the \texttt{LOCKLEAF} flag was set or not \parencite{freebsd_namei}.
-FreeBSD perform file lookups with the \texttt{VOP\_LOOKUP()} function \parencite{freebsd_voplookup}. It specifically searches for a
+FreeBSD performs file lookups with the \texttt{VOP\_LOOKUP()} function \parencite{freebsd_voplookup}. It specifically searches for a
 component in a specified directory path \parencite{freebsd_voplookup}. From a component, it returns a pointer to a locked vnode
 \parencite{freebsd_voplookup}. This can be one of the sources of deadlocks, assuming that the filesystem does not follow a strict
 tree hierarchy, since this process is rather complicated and is very centralized \parencite{freebsd_voplookup}.
@@ -158,7 +158,7 @@ tree hierarchy, since this process is rather complicated and is very centralized
 		\hline\hline
 		\texttt{/bin}         & Contains utilities for both single- and multi-user environments                                                        \\ \hline
 		\texttt{/boot}        & Contains programs and configurations necessary for booting up the system                                               \\ \hline
-		\texttt{/dev}         & Contains device nodes, which are entrypoints to devices that are connected to the system \parencite{freebsd_intro}     \\ \hline
+		\texttt{/dev}         & Contains device nodes, which are entry points to devices that are connected to the system \parencite{freebsd_intro}    \\ \hline
 		\texttt{/etc}         & Contains system configuration files and scripts                                                                        \\ \hline
 		\texttt{/mnt}         & Serves as a temporary mount point                                                                                      \\ \hline
 		\texttt{/proc}        & Mounts the \textit{process file system}, which displays the process table of the filesystem \parencite{freebsd_procfs} \\ \hline
@@ -277,7 +277,7 @@ can add significant overhead, which is nonexistent in the bitmap approach. Anoth
 well for large storage workloads since it is able to add more devices to the pool. This allows space allocation to be
 redistributed across multiple vdevs. However, UFS and FFS are fixed into their partitions \parencite{schaumann},
 hence expanding the partitions require the system to perform a full backup-repartition-recovery cycle. Free space management
-is highly crucial in UFS as accessing files become increasingly inefficient as more files are added to the filesystem.
+is highly crucial in UFS as accessing files becomes increasingly inefficient as more files are added to the filesystem.
 A good rule of thumb is to keep around 1-10\% of minimum free space, which depends on the partition size \parencite{oracle_min_freespace}.
 
 \subsection{File Protection and Security} \label{file-protection-security} % done
@@ -413,7 +413,7 @@ in FFS.
 
 \subsection{Disk Scheduling and I/O Management} \label{disk-scheduling-io} % done
 
-Earlier releases of FreeBSD uses primitive disk schedulers such as elevator and C-LOOK schedulers \parencite{rizzo2009}.
+Earlier releases of FreeBSD used primitive disk schedulers such as elevator and C-LOOK schedulers \parencite{rizzo2009}.
 \textcite{rizzo2009} later proposed utilizing the \textbf{GEOM architecture} in disk scheduling, which posed several advantages
 such as ease of implementation of disk schedulers and reusability of existing mechanisms for locking and configuration.
 GEOM uses a graph of GEOM modules to perform arbitrary manipulations of disk I/O requests or \textit{bio} \parencite{rizzo2009}. Disk I/O
@@ -455,7 +455,7 @@ in mixed workloads. However, NetBSD offers more explicit scheduling options with
 
 \subsection{Performance Considerations} \label{performance-considerations} % done
 
-FreeBSD's ZFS support three caching strategies: ARC, L2ARC, and SLOG \parencite{khurshid2025}. The
+FreeBSD's ZFS supports three caching strategies: ARC, L2ARC, and SLOG \parencite{khurshid2025}. The
 \textbf{ARC} or the \textbf{Adaptive Replacement Cache} is an adaptive read caching mechanism that resides in the system's main
 memory \parencite{khurshid2025}. It aims to balance between recency of cache entries and frequency of access to the entries
 \parencite{khurshid2025}. It competes with the kernel and user applications for memory \parencite{khurshid2025}. ARC balances
@@ -516,4 +516,51 @@ simpler and unified caching mechanism with UBCs, which often makes it an ideal o
 This simplicity comes at a cost of lesser flexibility and difficulty in tuning. Furthermore, early benchmarks on UBC tested by
 \textcite{silvers2000} show that the write performance of UBC still needs improvement.
 
-\subsection{Summary}
+\subsection{Summary} \label{file-and-disk-summary}
+
+FreeBSD and NetBSD largely diverge in the design philosophy of the major filesystems they adopt and implement. This divergence
+also defines the core strengths and weaknesses of each of their implementations. FreeBSD's ZFS unifies the filesystem and volume
+manager into a single system built on a layered dnode/object set/DSL hierarchy, storage pools composed of vdevs, free space
+management with space maps, and a layered caching subsystem with ARC, L2ARC, and SLOG. This design contributes to the reliability
+and scalability that FreeBSD offers. In addition to this core design, ZFS also comes with additional features for data integrity
+such as copy-on-write snapshots, checksums with error correction, and RAIDz parity. The ability to add more vdevs in a storage
+pool allows for storage allocation to be redistributed across disk devices without needing an entire backup-repartition-recovery
+cycle. This design comes at a cost of complexity and resource overhead. Using space maps for free space management incurs overhead
+in the form of transaction logging and AVL-replays. ARC can often compete with the kernel and user applications for memory space.
+L2ARC adds overhead on the RAM for storing the block pointers. Careless tuning can even hurt the performance of the system. In
+contrast, NetBSD relies on a simpler implementation with FFS, which retains the classic cylinder-group organization consisting of
+superblocks, inodes, bitmaps for tracking free space, and data blocks. FFS also adopts a unified caching mechanism with UBC.
+These design choices contributes to NetBSD's high cross-compatibility on a wide variety of platforms and workloads. However, it
+lacks the additional features that ZFS provides such as checksumming and RAIDZ redundancy. Partitions are also fixed in size,
+and expanding them is an expensive process. Its free space management mechanism with bitmaps cannot prevent fragmentation when
+allocating file sizes over 48K.
+
+The tradeoffs between each design philosophy is evident across the four comparison dimensions. In terms of performance, ZFS's
+adaptive and self-tuning ARC can boost access for high-storage workloads, but its complexity can add significant overhead.
+Careless tuning can also hurt its performance. NetBSD's UBC is simpler and well-suited for general-purpose workloads, though
+early benchmarks suggest that its write performance needs significant improvement. It also offers less flexibility in tuning.
+In terms of reliability, both initially adopted soft updates for metadata consistency, but on more newer releases of FreeBSD
+adopting ZFS offers more sophisticated recovery mechanisms with copy-on-write, checksumming, RAIDZ, and the ZIL. NetBSD
+incorporates its own journaling mechanism with WAPBL, which is much simpler and has no single point of failure but has less recovery options.
+This is unlike ZIL which can corrupt an entire storage pool if the logs are corrupted. In terms of scalability, ZFS's pool-and-vdev
+model allows for greater scalability by allowing expansion of allocated memory across devices. UFS and FFS does not currently
+have such mechanisms. In terms of security, the two systems share the standard UNIX permissions model which are extended
+with POSIX ACLs and EAs. However, the two operating systems differ in how they approach extended permissions. On one hand,
+FreeBSD allows for more refined permissions with file flags and a more coarse-grained and systemwide permissions control
+with secure levels. On the other hand, NetBSD splits the superuser privileges into 57 RBAC roles. Furthermore, NetBSD offers
+an extensive set of mitigation techniques with PaX features at a cost of per-program tuning complexity.
+
+These tradeoffs show which system is ideal under specific conditions and workloads. For workloads that perform frequent
+file writes such as a logging system, NetBSD's FFS ensures data corruption by
+committing metadata logs and handles predictable I/O with minimal overhead with its buffer queue scheduling strategies.
+FreeBSD's ZFS would absorb writes through copy-on-write and the ZIL, which can be accelerated by a SLOG device for low-latency
+synchronous writes. For a system handling large multimedia files, FreeBSD's ZFS would be a more preferable option with its
+record sizes reaching 1M capacities for media and backup workloads. Furthermore, its \texttt{logbias} property could be
+configured to prioritize throughput over latency. It also allows for scalability with its pooled vdevs which can accommodate
+large datasets. In contrast, NetBSD's FFS might degrade in performance because of its increased fragmentation when file
+sizes exceed 48K, which can add allocation complexity and increasing seek distances. Overall, FreeBSD offers high data integrity,
+scalability, and performance for intense workloads at a cost of high complexity and overhead. This makes FreeBSD an ideal
+option for specific large-scale and high-intensity workloads that could greatly benefit from ZFS's complexity such as servers,
+backup systems, and cloud storage. While NetBSD offers simplicity, portability, and predictability at a cost of a limited set of
+additional features. This makes NetBSD an ideal option for general-purpose and resource-constrained workloads such as desktops,
+laptops, and IoT systems.
