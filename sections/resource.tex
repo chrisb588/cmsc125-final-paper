@@ -1,0 +1,441 @@
+\subsection{Resources Managed} \label{resources-managed} % done
+
+FreeBSD manages system resources such as the underlying CPU, main memory, pipes, sockets, files, and disk devices
+\parencite{mckusick2014}. System resources such as pipes, sockets, files, and disk devices can be accessed by the
+\textit{descriptor array}, which is one of the kernel resources FreeBSD manages aside from credentials and signal states
+\parencite{mckusick2014}. Each process is assigned to its own descriptor array listing down the devices it can
+use \parencite{mckusick2014}. Each thread is assigned to its own set of registers, program counter, and stack \parencite{mckusick2014}.
+CPU and memory are the most preemptable resources while accessing serial I/O ports cannot be preempted and requires
+exclusive access. Comprehensive resource tracking and management in FreeBSD is handled by the \texttt{rctl} command
+\parencite{wojtczak2022}. Configurations such as \texttt{cputime}, \texttt{memoryuse} for resident set size,
+\texttt{vmemoryuse} for virtual address space, \texttt{swapuse} for swap usage, \texttt{openfiles} for open file
+descriptors, \texttt{nthr} for the number of threads used, and \texttt{shmsize} for \textit{SysV shared memory segments}
+\parencite{wojtczak2022}. These settings can be adjusted for each process, user, or jail. This granularity allows
+for a fine-grained control over shareable resources such as the main memory and the descriptor array and nonshareable
+resources such as CPU cores and exclusive device handles. FreeBSD treats the main memory as its most critical resource,
+hence FreeBSD provides mechanisms to ensure that main memory is properly utilized. For instance, it adopts
+a generic \textit{"VM object"} for unifying different forms of memory storage such as swap-backed, file-backed, or physical
+device-backed storage into a unified buffer cache \parencite{freebsd_vms}. This can potentially prevent redundant
+memory use across the filesystem, which can avoid disk I/O and process stalls. Another interesting detail about FreeBSD
+is that it treats interrupt handling as its own resource management concern. In FreeBSD, interrupts threads run at
+real-time kernel priority and have their own thread context \parencite{freebsd_genarchi}. This allows interrupt threads
+to block upon encountering locks \parencite{freebsd_genarchi}. However, since multiple handlers can share the same interrupt
+thread, they should not sleep to prevent starvation of other interrupt handlers \parencite{freebsd_genarchi}. Despite this,
+interrupt threads being able to block on locks and have their own context can improve the latency of the system.
+
+In NetBSD, kernel entities are able to share resources associated with a process \parencite{williams_scheduler}.
+Each kernel entity has its own running state \parencite{williams_scheduler}. The kernel can preempt a thread and transfer
+the CPU control to the uptime handler \parencite{williams_scheduler}. With this design, NetBSD treats CPU time as a
+preemptable resource and address spaces and file descriptor tables as shareable resources accessible by multiple threads
+of the same process. NetBSD organizes resource management in \texttt{/sys/kern}, where it contains mechanisms for
+managing signal delivery, resource control, and process tracking \parencite{netbsd_src}. Block and character devices and
+descriptor tables which are covered by the I/O subsystem are treated as first-class kernel resources by NetBSD.
+Memory in NetBSD is managed as a dynamically allocated and on-demand paged resource and serves as the most critical resource
+in NetBSD. This is reflected in how NetBSD's virtual memory manager, \textit{UVM}, treats memory. UVM treats the main
+memory as a set of \texttt{uobj} objects, which are a sequence of contiguous virtual memory regions backed in a storage space
+such as a vnode or the swap \parencite{netbsd_internals}. The 5.0 release of NetBSD further extends its resource
+management system to \textit{SMP} systems with processor and CPU sets for thread affinity \parencite{netbsd_5_0}.
+Almost all core kernel subsystems are redesigned to adopt highly concurrent algorithms \parencite{netbsd_5_0}.
+A flaw to this redesign is that it can lead to systemwide freezes under workloads with frequent switching between high CPU
+and I/O operations on security subsystems caused by locking mechanisms. Nevertheless, this implementation treats
+CPU cores as a dynamically assignable resource.
+
+FreeBSD and NetBSD both treat memory as their most critical resource. Both operating systems also converge on unifying
+memory storage abstractions. FreeBSD exposes
+pipes, sockets, files, and devices through a per-process descriptor array alongside credentials and signal states.
+This provides a fine-grained and configurable tracking across processes, users, and jails, which is done using the
+\texttt{rctl} command. NetBSD similarly treats block and character devices and descriptor tables as first-class kernel
+resources and organizes them in \texttt{/sys/kern}. However, they diverge in the scope and structure involved in
+managing these resources. FreeBSD uses a generic VM object to combine swap-backed, file-backed, and device-backed storage
+into a single unified buffer cache, while NetBSD's UVM treats memory as a set of \texttt{uobj} objects which are backed
+by a vnode or swap. A key tradeoff of the presented approaches lies in how these are reflected in concurrent workloads.
+NetBSD's 5.0 release incorporates highly concurrent algorithms and support for SMP systems with processor and CPU sets
+for thread affinity by reworking almost all of the core kernel subsystems. This comes at a cost of potential system-wide
+freezes on workloads that frequently switch between CPU and I/O loads on security subsystems. FreeBSD's jail-aware
+\texttt{rctl} model offers more granularity in administrative control and more organized resource accounting. This design
+is certainly well-suited to multi-tenant and containerized environments, which is consistent of using jails as FreeBSD's
+primary virtualization mechanism \parencite{freebsd_jails}.
+
+\subsection{Resource Allocation Strategies} \label{resource-allocation-strats} % done
+
+Dynamic CPU allocation in FreeBSD is managed by the \textbf{ULE scheduler}, which is FreeBSD's primary CPU scheduling algorithm
+\parencite{mckusick2014_process}. ULE enforces both fairness and priority in scheduling processes \parencite{mckusick2014_process}.
+This is done by finding a stable equilibrium from by assigning a proportional CPU time depending on the nice value instead
+of disproportionally allotting CPU time to the highest priority process \parencite{robserson_ule}.
+ULE achieves this with per-CPU run queues and CPU topology model \parencite{robserson_ule}.
+The ULE scheduler has different scheduling mechanisms for interactive and non-interactive threads. For interactive threads,
+their priority numbers are gradually boosted to improve the system's responsiveness \parencite{mckusick2014_process}. While
+for non-interactive threads, they are added to a time-sharing queue \parencite{mckusick2014_process}. This allows non-interactive
+threads to run at least once per pass regardless of priority, which ensures that CPU access is fairly distributed across
+non-interactive threads \parencite{mckusick2014_process}. This scheduling mechanism achieves a good balance of throughput
+for large batched workloads and latency for interactive workloads. However, this mechanism can potentially starve low-priority
+background jobs. Allocating other system resources such as memory and file resources to users are performed with login classes,
+which are defined in \texttt{/etc/login.conf} \parencite{freebsd_limiting_users}. A login class is assigned to each user,
+wherein it specifies caps on CPU time, memory use, file descriptor use, and process count for each user \parencite{freebsd_limiting_users}.
+They are typically set statically on login time and cannot be adjusted automatically.
+However, disk quotas are not managed in the login class \parencite{freebsd_limiting_users}. Instead, they are handled separately
+with the \texttt{edquota} command \parencites{freebsd_limiting_users}{freebsd_filesys_quotas}.
+FreeBSD employs limits on using certain resources with \textit{resource containers} or \textit{RCTL} \parencite{freebsd_resource_limits}.
+The RCTL framework enforces limits on specific resources using rules \parencite{freebsd_resource_limits}. Each rule specifies
+a subject, which can either be a user, process, or jail, a resource to be used, and an action, which includes \texttt{deny}
+or denying an allocation, \texttt{sighup} or sending the \texttt{SIGHUP} signal to the offending process, or \texttt{log}
+or logging a message to the system log \parencite{freebsd_resource_limits}. This allows for a dynamic control during runtime allocation
+which can be updated without having to reboot. This also limits cascades from jails to individual processes. However, RCTL
+must be explicitly enabled by setting \texttt{kern.racct.enable} to \texttt{1} \parencite{freebsd_resource_limits}. This
+can only be tuned at boot time. It is also disabled by default because of the overhead that comes with it.
+In reclaiming resources, specifically memory, FreeBSD's VM system makes use of the \textbf{multi-queue LRU model} to reclaim memory
+by evicting specific pages \parencite{dillon}. It evicts dirty pages when memory is stressed \parencite{dillon}. \textcite{dillon}
+noted that selecting a wrong page to be evicted can cost the system hundreds of thousands of CPU cycles. Hence significant
+overhead might be required to make the correct choices in selecting pages to be eviceted.
+
+Thread allocation in NetBSD is mainly governed by two schedulers that can be selected at compile time, which are the \textit{4.4BSD
+	scheduler} and the \textit{M2 scheduler} \parencite{netbsd_internals}. While both schedulers both utilize a time-sharing queue
+and performs dynamic priority calculation, they differ in how the priorities are recalculated. The 4.4BSD scheduler recalculates
+priority using a digital decay filter which checks the recent CPU utilization of a thread on \texttt{l\_estcpu} and adjusts
+the priority in each second \parencite{netbsd_internals}. However, the M2 scheduler adopts a priority recalculation algorithm
+based on SVR4 or Solaris-style time quantum logic, which can perform priority recalculation in $O(1)$ time \parencite{netbsd_internals}.
+While the M2 scheduler provides more interactivity in some workloads, it is still not ready for production use. For \textit{symmetric
+	multiprocessing (SMP)} systems, the scheduler dispatcher allocates CPU to these systems with per-CPU run queues and heuristic-based
+balancing \parencite{rasiukevicius2009}. Thread affinity can also be set explicitly to reduce \textit{cache thrashing} by
+setting explicit bindings of threads to processors \parencite{rasiukevicius2009}. In performing per-process resource allocation,
+it has to go through the POSIX \texttt{setrlimit()} and \texttt{getrlimit()} interface \parencite{netbsd_setrlimit}. System resource
+consumption limits can be accessed and adjusted by calling \texttt{getrlimit()} and \texttt{setrlimit()} respectively \parencite{netbsd_setrlimit}.
+Limits on resource consumption are further specified by their soft and hard limits. A \textit{soft limit} is the set limit that
+is currently enforced by the system while a \textit{hard limit} is the permitted ceiling limit for consuming a resource
+\parencite{netbsd_setrlimit}. Adjusting hard limits is only restricted to the superuser while unprivileged users can adjust
+the soft limits of a particular resource \parencite{netbsd_setrlimit}. Infinite limits can also be specified with the
+\texttt{RLIM\_INFINITY} macro \parencite{netbsd_setrlimit}.
+
+The two operating systems mainly differ in how resource limits are imposed and the maturity of their scheduling policies.
+FreeBSD relies on a production-grade ULE scheduler that enforces both fairness and priority by assigning CPU time proportional
+to the assigned nice value. NetBSD offers two scheduling algorithms, with a production-ready but older 4.4BSD scheduler
+that performs priority recalculation based on recent CPU utilization and a faster but less mature M2 scheduler that is
+able to perform priority recalculation in $O(1)$ time. FreeBSD's mature single-scheduler approach prioritizes stability
+and balanced throughput-latency relationship at the risk of starving low-priority background processes, whereas NetBSD's
+dual-scheduler approach offers flexibility. Moreover, in enforcing resource limits, FreeBSD combines statically assigned
+login classes with dynamically updatable RCTL framework, albeit RCTL is only available for developmental environments
+due to the significant overhead it brings. This is in contrast with NetBSD that provides routing to per-process limits
+through the POSIX \texttt{setrlimit()}/\texttt{getrlimit()} interface with soft and hard limits. This approach favors
+portability and POSIX compliance over FreeBSD's dynamic but heavier runtime enforcement.
+
+\subsection{Resource Tracking} \label{resource-tracking} % done
+
+In FreeBSD, resource accounting is done at the kernel level through \textbf{RACCT (Resource Accounting)}, which was first introduced
+in FreeBSD 9.0 \parencite{freebsd_9_relnotes}. RACCT maintains a per-process, per-jail, and per-login class accounting data which is
+used for resources such as CPU times, resident memory use, and the number of open files \parencite{freebsd_racct_status}. It operates
+together with the RCTL framework previously discussed in Section \ref{resource-allocation-strats} to enforce limits and trigger actions
+that can be configured whenever the enforced limits are exceeded \parencite{freebsd_racct_status}. It is required that the accounting
+routines will be invoked by RACCT on every allocation and deallocation, it brings overhead to the system \parencite{freebsd_racct_status}.
+Because of this, it is disabled by default and system administrators must explicitly set \texttt{kern.racct.enable} to \texttt{1} in
+\texttt{/boot/loader.conf} to enable it \parencites{freebsd_racct_status}{freebsd_resource_limits}.
+RACCT has two primary primitives in tracking how resources are use, which are the \texttt{racct\_add()}, \texttt{racct\_sub()},
+and \texttt{racct\_set()} functions. \texttt{racct\_add()} and \texttt{racct\_sub()} update the usage counters on a resource allocation
+or release respectively, while \texttt{racct\_set()} is used to manually set the usage counter to a specific value \parencite{freebsd_resource_limits}.
+This function is typically used for file descriptors, wherein file descriptor tables can be shared between processes. Enforcing an incremental
+tracking system would be imprecise \parencite{freebsd_resource_limits}. As a consequence, file-descriptor accounting is documented as
+somewhat imprecise, but not critically imprecise \parencite{freebsd_resource_limits}.
+
+Resource reclamation in FreeBSD is a two-phase event which is tied to terminating a process.
+When a process is terminated, the \texttt{exit()} routine is called to kill all threads associated with that process \parencite{mckusick2014_term}.
+Additionally, it also resets the execution state on kernel mode, removes the process from the \texttt{allproc} list, and moves that process
+to the zombie list specified by \texttt{zombproc} \parencite{mckusick2014_term}. The accumulated resource usage is bundled into a
+\texttt{p\_ru} structure which is retained for the parent to be retrieved by calling the \texttt{wait4()} function \parencite{mckusick2014_term}.
+The kernel then reclaims all descriptors that were in use. If the terminating process holds the final reference to an object such as a file or a
+socket, the object's manager is notified to perform some final cleanup such as deleting the file or deallocating the socket
+\parencite{freebsd_design4bsd}. For performance-sensitive workloads wherein always-on accounting is too expensive, FreeBSD provides a profiling
+tool called \textbf{DTrace} that can be used by the kernel and userland to expose resource usage at production granularity when enabled
+\parencite{lavigne2021}.
+
+In NetBSD, it tracks per-process resource usage with \texttt{proc.pid.rlimit} \texttt{sysctl} MIB hierarchy, wherein the resource limits
+of each process are exposed, which can include CPU time, virtual memory, file size, and descriptor count such as queryable and settable
+\texttt{sysctl} nodes \parencite{netbsd_sysctl}. The \texttt{proc.curproc} shorthand targets the current process, while arbitrary processes
+can be addressed by their PID \parencite{netbsd_sysctl}. Instead of tracking usage counters adopted in FreeBSD, NetBSD tracks the configured
+limits instead. This implementation makes it lighter but can be less capable for performing aggregate accounting tasks across multiple jails
+or user classes. The limits for each process are read and modified through the POSIX \texttt{getrlimit()} and \texttt{setrlimit()} interface
+mentioned in Section \ref{resource-allocation-strats}. This interface is integrated with separate soft and hard limits \parencite{netbsd_getrlimit}.
+\textcite{netbsd_getrlimit} points out a bug wherein physical memory size limits can be bypassed when the resident set size limit
+\texttt{RLIMIT\_RSS} is not implemennted in UVM. Resource usage is charged at termination by the \textbf{Common Scheduler Framework (CSF)},
+wherein a process's accumulated usage can be charged to its parent on exit with the \texttt{sched\_proc\_exit()} hook \parencite{netbsd_csf}.
+In addition, a periodic \texttt{sched\_pstats()} routine updates the usage statistics of a process and verifies its CPU usage \parencite{netbsd_csf}.
+For memory usage, UVM reclaims pages by flushing the dirty pages through their backing stores by performing the \textit{putpages} operation,
+when closing files, or when explicit filesystem synchronization occurs \parencite{netbsd_internals}
+
+The two operating systems adopt opposing philosophies in terms of resource tracking. FreeBSD adopts an \textit{active accounting} model
+wherein live usage counters are regularly tracked and maintained. This enables hierarchical aggregation across processes, users, and jails.
+In addition, this also enforces resource limits at runtime. However, this comes at a cost of overhead for each allocation, justified by its
+disabled-by-default posture. In contrast, NetBSD incorporates a much lighter approach with its \textit{limit-oriented} model which records
+configured limits instead of live usage. This avoids overhead that comes with accounting, but it has no built-in aggregation across jails or
+login classes. The presence of DTrace provides FreeBSD an additional opt-in path for observability with no idle cost, whereas NetBSD's
+approach is simpler and requires minimal overhead by exposing limits through \texttt{sysctl}. FreeBSD's RACCT requires incurring significant
+costs that comes with richer enforcement of resource usage and aggregation, while NetBSD remains lean but cannot provide fine-grained management
+for resource attribution.
+
+\subsection{Load Balancing and Distribution} \label{load-balancing-distribution} % done
+
+The ULE scheduler previously mentioned in Section \ref{resource-allocation-strats} primarily governs CPU load-balancing in FreeBSD by coupling per-CPU
+run queues with two complementary mitigation strategies. When a CPU becomes idle, FreeBSD performs a \textit{pull migration} wherein
+\texttt{tdq\_idled()} looks for other CPUs whose work can be stolen \parencite{mckusick2014_process}. A long-term load balancer also performs
+\textit{push migration} by moving a thread from the busiest CPU to the least busy CPU once per second
+\parencites{mckusick2014_process}{mckusick2020}. For a CPU's work to be stolen, a load threshold must be exceeded to
+prevent excessive migration and cache thrashing \parencite{mckusick2020}. Thread affinity and processor utilization
+are treated by ULE as differing goals that need to be addressed during placement. \texttt{sched\_pickcup()} selects the best CPU when a
+thread can be executed by balancing thread affinity, current load, and topology relationships such as cache sharing and NUMA proximity
+\parencite{robserson_ule}. This is evaluated on three events: a thread becomes runnable, a CPU goes idle, and the periodic rebalancer
+ticks \parencite{mckusick2014_process}. This avoids overhead that comes with constant recalculations, however, it can leave short-term
+imbalances between ticks \parencite{mckusick2014_process}. Furthermore, ULE treats symmetric multithreading as a special case of NUMA,
+wherein scheduling two threads from the same process onto related logical CPUs are prevented unless necessary with CPU topology information
+provided by machine-dependent code \parencite{roberson_ule}. This can improve cache efficiency and reduce contention between threads sharing
+the same physical execution units \parencite{robserson_ule}. When compared against Linux's CFS, it was found by \textcite{bouron2018}
+that ULE achieves a better long-term load balancing when compared to CFS. However, ULE might cause temporary starvation on identical threads,
+which can apparently improve throughput on some workloads by concentrating CPU time on active threads \parencite{bouron2018}.
+
+In NetBSD, load balancing and distribution especially on SMP systems is done using a dispatcher that also utilizes per-CPU run queues with
+thread migration and heuristic-based balancing \parencite{rasiukevicius2009}. This attempts to reconcile the same opposing goals of
+increasing processor utilization and maintaining thread affinity. The dispatcher's decisions are described as potentially suboptimal
+because of its heuristic nature instead of adopting a more deterministic and topology-aware algorithm \parencite{rasiukevicius2009}.
+NetBSD 5.0 introduced \textit{processor sets} and \textit{dynamic CPU sets} to provide administrators with explicit control over how threads
+and processes are bound to specific CPU groups \parencite{netbsd_5_0}. A processor set follows a resource-pool model wherein bound
+processors can only run on their assigned threads, which allows critical workloads to reserve CPU resources with an added risk of
+putting those CPU resources on idle when the bound threads gets blocked \parencite{netbsd_5_0}. In terms of memory, NetBSD's UVM
+pagedaemon distributes reclamation pressure across page types such as anonymous, executable, and file-cache pages using six configurable
+\texttt{sysctl} parameters that define a lower and upper limit per page type \parencite{selonen}. When a page type falls below its
+lower limit, the pagedaemon reactivates the pages instead of freeing them \parencite{selonen}.
+
+FreeBSD and NetBSD both use per-CPU run queues and frame distribution in balancing affinity and utilization. However, they largely differ
+in their determinism and granularity. FreeBSD's ULE draws on machine-dependent topology data and combines event-driven pull and push
+migrations, making ULE topologically-aware. This approach is able to balance the two goals in the long term. However, this comes at a
+cost of brief imbalances between ticks and possible starvation. While NetBSD's dispatcher approach is not exactly optimal, this
+disadvantage is compensated by exposing explicit processor and CPU sets which provides more deterministic control over placement.
+This contrast also seems to appear in how memory is distributed. FreeBSD relies on the multi-queue LRU reclamation of its VM system
+as described in Section \ref{resource-allocation-strats}, whereas NetBSD's per-type pagedaemon balancing is more fine-grained but
+difficult to tune.
+
+\subsection{Handling Deadlocks} \label{handling-deadlock} % done
+
+Both FreeBSD and NetBSD primarily incorporate \textit{deadlock prevention} in dealing with deadlocks. This is done by enforcing a
+consistent global lock ordering instead of detecting at runtime. They mainly differ in the maturity of the tooling for performing
+such mechanism. This discipline is enforced by the idea that if every thread acquires locks in the same order, the circular-wait
+condition cannot arise \parencites{baldwin2002}{netbsd_mutex}.
+
+In FreeBSD, this is done with a dynamic lock-order verifier called the \textbf{witness} \parencite{baldwin2002}. The witness builds
+a directed graph of lock-acquisition relationships at runtime \parencite{baldwin2002}. For instance, if a thread acquires lock B
+while holding lock A, the witness records this relationship. If another thread later tries to acquire the same pair in reverse
+order, the witness logs a warning and optionally drops into the kernel debugger \parencite{baldwin2002}. The \texttt{WITNESS}
+kernel option maintains this graph by lock type and checks for potential cycles at each acquisition \parencite{freebsd_kerneldebug}.
+When a cycle is detected, the system generates a warning and stack trace to the console \parencite{freebsd_kerneldebug}. Additionally,
+the \texttt{WITNESS\_SKIPSPIN} option skips the frequently acquired spin locks, which can potentially reduce overhead
+\parencite{freebsd_kerneldebug}. Because of the extremely high performance cost it comes with, witness is disabled in production
+kernels and is only accessible in development environments \parencite{baldwin2002}. FreeBSD also prevents specific deadlock classes
+structurally. For instance, a spin mutex can disable interrupts on the local CPU while being held so that another interrupt cannot
+attempt to reacquire the same mutex being held by the interrupted thread \parencites{mckusick2014_sync}{freebsd_mutex}. This, however,
+comes at the cost of increased interrupt latency \parencites{mckusick2014_sync}{freebsd_mutex}. FreeBSD also incorporates an
+additional role that distinguishes \textit{bonded sleeps}, which blocks acquisitions for a block when it is currently owned by
+a specific process, from \textit{unbounded sleeps}, which waits for an external event \parencite{freebsd_locking}. A thread in a
+bounded sleep must never wait on a lock being held by a thread in an unbounded sleep \parencite{freebsd_locking}. Moreover,
+recursive \texttt{Giant} mutex protecting data structures are dropped during unbounded sleeps to prevent cascading blocks
+\parencite{freebsd_locking}.
+
+NetBSD adopts the same discipline for preventing deadlocks and adds onto it by enforcing a strict hierarchy wherein adaptive mutexes
+and sleep locks cannot be acquired whenver a spin mutex is being held \parencite{netbsd_mutex}. This approach can prevent a class
+of interrupt-handler deadlocks \parencite{netbsd_mutex}. The \texttt{LOCKDEBUG} compile-time option can be set during development
+to record lock-state information for diagnosing deadlocks \parencite{netbsd_lock}. \texttt{LOCKDEBUG} is disabled for production
+environments due to the heavy overhead it comes with. For simplelocks, it converts a thread attempting
+to relock a lock it already holds into a \textit{locking against myself} similar to FreeBSD's witness \parencite{netbsd_lockmgr}.
+NetBSD plans on implementing a deadlock detection mechanism, but it still remains as an open project
+\parencite{netbsd_deadlock_detector}.
+
+The practical consequences of relying on prevention is evident in NetBSD's recent jails development, wherein a full system freeze
+can be caused from \texttt{secmodel\_eval} calls on UVM and scheduling paths under mixed high CPU and I/O loads
+\parencite{petermann_jails}. This is rooted to lock-ordering violations, recursion, and subtle lock interactions at security-model
+integration points \parencite{petermann_jails}. As of now, NetBSD does not currently adopt a recovery mechanism, hence reboots
+are often done to resolve this. But overall, both systems share a prevention-first philosophy for handling deadlocks with
+comparable compile-time debugging tollings. However, FreeBSD's runtime witness verifier provides stronger in-production safeguards.
+In contrast, NetBSD's prevention-only model leaves complex codepaths exposed to unrecoverable freezes documented by
+\textcite{petermann_jails}.
+
+\subsection{Resource Contention and Resolution} \label{resource-contention} % done
+
+When multiple threads compete for a short-term lock such as a mutex, reader-writer lock, or read-mostly lock, FreeBSD tracks both
+the lock owner and waiting threads in a \textbf{tunstile} data structure \parencite{mckusick2014_sync}. The waiting threads
+are sorted within the turnstile by priority. FreeBSD also enforces a form of \textit{priority inheritance} wherein priority is
+recursively propagated to the owner if a waiter has a higher priority than the current lock holder \parencite{mckusick2014_sync}.
+The tunstile state itself is allocated from a pool when a contention do occur since a thread can sleep on one mutex at a time
+\parencite{mckusick2014_sync}. This ensures that the number of simultaneously active turnstiles never exceeds the number of
+threads \parencite{mckusick2014_sync}. This also controls potential memory overhead fluctuations \parencite{mckusick2014_sync}.
+
+At the scheduling level, the ULE scheduler prevents CPU starvation among threads with the same priority with time slices
+\parencite{mckusick2014_process}. A time slice sets the maximum latency of a thread of a given priority before running
+\parencite{mckusick2014_process}. Then, the ULE dynamically adjusts the time slice depending on the current system load while
+ensuring that it does not go beyond a minimum value to avoid thrashing \parencite{mckusick2014_process}. A round-robin approach
+is then adopted for cycling through these threads with the same priority under high contention \parencite{mckusick2014_process}.
+This approach is in contrast to the traditional BSD scheduler, which makes use of a single global run queue and a single global
+scheduler lock, which becomes a contention bottleneck as the number of runnable threads increases \parencite{mckusick2014_process}.
+This often happens since priority calculations need to iterate over every runnable thread while holding highly contended locks,
+blocking forks, exits, and context switches at the same time in the process \parencite{mckusick2014_rpcoess}. For lock-level
+contention, FreeBSd leans on \textit{lent priority} in bounded sleeps \parencite{freebsd_locking}. In this approach, a thread
+currently waiting on a mutex lends its priority to the owner to allow the owner to be prioritized over low-priority threads,
+which allows the lock to be released sooner \parencite{freebsd_locking}. For unbounded sleeps, blocked threads are awakened
+in FIFO, which enforces fairness but not priority \parencite{freebsd_locking}. This leads to potential starvations on low-priority
+threads under very high contentions.
+
+In handling lock contentions, NetBSD makes use of \textbf{adaptive mutexes}, which behaves similarly to spinlocks that sleeps
+whenever the expected hold time is long \parencite{netbsd_locking}. This busy-waiting approach is much preferred considering
+that the system encounters short hold times more frequently \parencite{netbsd_locking}. Unlike a traditional spinlock, a thread
+holding an adaptive mutex can be preempted by the kernel, which can hurt latency for real-time applications. At the scheduler level,
+NetBSD's time-sharing scheduler prioritizes I/O-bound threads upon waking up from an I/O operation, which preserves fairness and
+increases interactive responsiveness \parencite{rasiukevicius2009}. Each \textit{light-weight process (LWP)} carries a dynamically
+calculated priority value and time quantum \parencite{rasiukevicius2009}. \texttt{SCHED\_FIFO} threads have fixed priorities
+and are executed till completion, while \texttt{SCHED\_RR} threads are scheduled in a round-robin fashion within their class to
+prevent starvation \parencite{rasiukevicius2009}.
+
+Both designs share lazy contention-tracking allowing lightweight locks to resemble turnstiles under heavy contention. Both
+also incorporates priority inheritance and round-robin cycling to limit starvation across threads of the same priority. However,
+they differ in behavior under mixed CPU and I/O loads. While NetBSD's contention resolution is sufficient on normal workloads,
+it can result to full system freezes when locking interactions in security-adjacent subsystems such as \texttt{secmodel\_eval}
+are performed \parencite{petermann_jails}. This highlights an insufficient isolation between hot subsystem paths and the security
+enforcement layer. FreeBSd's more mature approach of fine-grained locking per subsystem provides a much stronger isolation,
+albeit the complexity and overhead it brings.
+
+\subsection{Performance and Efficiency} \label{resource-performance} % done
+
+Enforcing efficient resource management in FreeBSD requires the replacement of a single \texttt{Giant} lock with fine-grained
+locking mechanism through the \textit{SMPng} project, which was completed in FreeBSD 6.0 \parencite{freebsd_smp}.
+The \texttt{Giant} lock prevented concurrent execution of kernel threads, which causes high contentions and minimal SMP speedups
+on kernel-intensive workloads such as networking and filesystem I/O \parencite{freebsd_smp}. A more fine-grained locking
+mechanism prevents such limitations, but brings its own set of tradeoffs by increasing per-packet and per-syscall processing
+cost through synchronization, which requires active tuning \parencite{freebsd_smp}. At the scheduling layer, the ULE scheduler's
+event-driven design achieves a good balance of efficiency and fairness \parencite{roberson_ule}. This balance is achieved by
+penalizing threads that consume their entire time slice and boosting waiting threads that do not consume their entire time slice
+\parencite{robserson_ule}. This balance is also achieved by assigning smaller time slices to high-priority and interactive
+threads and assigning large time slices to low-priority and CPU-bound threads \parencite{roberson_ule}. This efficiency has
+has been studied by \textcite{bouron2018} by conducting benchmarks on the ULE. \textcite{bouron2018} found that
+\texttt{sched\_pickcpu()} may scan all CPU cores by up to three times when selecting a placement, which results in consuming
+$13\%$ of the total CPU cycles on scanning alone. It has also been found that the ULE has a tendency of starving background
+threads when threads classified as background threads receive no CPU time in the benchmarks conducted by \parencite{bouron2018}.
+While this boots the interactive performance of the system, it is at a cost of poor enforcement of fairness.
+
+Both FreeBSD and NetBSD adopted the same approach in their user-space memory allocator. They replaced the legacy \texttt{phkmalloc}
+allocator with a newer \textbf{jemalloc} allocator because \texttt{phkmalloc} is unable to scale in multithreaded workloads
+\parencite{evans2006}. It is found that increasing the number of threads corresponds with a decrease in overall allocation
+throughput with \texttt{phkmalloc} \parencite{evans2006}. Whereas jemalloc is able to increase allocation throughput with more
+threads with its per-arena design \parencite{evans2006}. FreeBSD incorporated jemalloc in the 7.0 release, while NetBSD adopted
+jemalloc as its default user-space allocator in the 5.0 release \parencites{netbsd_jemalloc}{evans2006}. Scaling improvements
+were added in FreeBSD 7.0 by replacing shared locks, which is a post-SMPng bottleneck notably on multithreaded MySQL workloads,
+with a sleepable mutex primitive \parencite{kennaway}. As for NetBSD, efforts to significantly improve its efficiency on the
+5.0 release are reflected in overhauling a majority of the kernel subsystems, including virtual memory, memory allocations,
+and filesystem frameworks \parencites{lwn330994}{lwn332022}. This improvement replaced shared coarse-grained locking to
+fine-grained concurrent algorithms and allowing multiple processors to run kernel code simultaneously \parencites{lwn330994}{lwn332022}.
+NetBSD's adaptive mutexes embody a similar balance between efficiency and correctness, which defaults to busy-waiting when hold times
+are expected to be short to avoid context-switching overhead in the common case \parencite{netbsd_locking}. However, this can
+result in potentially spending a lot of CPU time spinning under high contention before going back to sleeping \parencite{netbsd_locing}.
+A case study conducted by \textcite{brown_seltzer} explored NetBSD's performance across Intel x86 generations and found that
+off-chip memory-system design significantly influences the performance of the operating system. Furthermore, it has been found
+that some kernel design decisions for dealing with cache and memory-bus constraints do not always transfer between chip
+generations \parencite{brown_seltzer}.
+
+Both operating systems share the same techniques of more fine-grained and per-subsystem locking and scalable concurrent
+allocator. However, these approaches mainly differ in when they are implemented and the emphasis of these design decisions.
+FreeBSD adopted this approach earlier with its transition to SMP systems with SMPng which is then further pushed into individual
+subsystems. While this significantly aid in boosting throughput on kernel-intensive workloads, this approach incur a lot of
+synchronization cost per operation. NetBSD's 5.0 overhaul also achieved comparable fine-grained concurrency and real-time
+responsiveness. However, NetBSD is still limited on its philosophy on high portability, which adds a cross-architecture tuning
+burden. Moreover, this contention previously discussed in Section \ref{resource-contention} leaves an edge case causing
+system freezes on high workloads.
+
+\subsection{Scalability} \label{scalability} % done
+
+FreeBSD's scalability on SMP systems has been refined over its releases. It was initially introduced in the 5.x releases
+which began replacing the \texttt{Giant} lock \parencite{freebsd_vs_dragonfly}. In FreeBSD 7.x releases, the ULE scheduler
+was introduced along with significant lock-granularity improvements \parencite{freebsd_vs_dragonfly}. This is further extended
+in FreeBSD 10 by adding per-structure locks, reader-writer locks, and lockless algorithms to most subsystems
+\parencite{freebsd_vs_dragonfly}. A tipping point has reached in FreeBSD 14 with the addition of NUMA awareness
+\parencite{freebsd_vs_dragonfly}. The documented cumulative results shows how FreeBSD scaled to more than 100 cores for
+various workloads \parencite{freebsd_vs_dragonfly}. It is important to note that this documented result is heavily
+workload-dependent. A study conducted by \textcite{cui2011} comparing Linux and FreeBSD in AMD 32-core systems found that
+FreeBSD scales better in workloads that perform intensive socket operations while Linux scales better for file-descriptor
+and process-intensive operations. \textcite{cui2011} also found that the synchronization primitives which protect the shared
+kernel data structures serve as the primary bottleneck in inhibiting the scalability of the system \parencite{cui2011}.
+Specifically, \textcite{freebsd_processor_trends} identified a NUMA-related ceiling in network I/O, wherein a dual-socket
+system achieved a consistent $35 G/s$ throughput only when the sender, receiver, and the texttt{netisr} thread were all scheduled
+on the same NUMA socket. When moving to a dual-socket configuration, this design introduced significant latency degrading
+the usable bandwidth \parencite{freebsd_processor_trends}. This issue seems to be caused by using a single \texttt{netisr}
+thread or the entire system and performing scheduling decisions that does not consider the locality of inter-thread communications
+\parencite{freebsd_processor_trends}. On the administrator side, adding or removing rules requires the kernel to walk through
+all \texttt{uidinfo}, \texttt{loginclass}, jail, and process structures in the \texttt{rctl} hierarchical resource-limit
+system \parencite{freebsd_resource_limits}. This means that administrative operations do not scale well with increasing users
+and jails despite the fact that no global tree is managed in performance-critical paths \parencite{freebsd_resource_limits}.
+
+NetBSD's approach to scalability began in the 5.0 release with the introduction of processor and CPU sets, and dynamic CPU
+affinity as its primary resource scaling mechanisms across cores \parencite{netbsd_5_0}. The older scheduler-activation
+model mentioned in Section \ref{resources-managed}, which scaled poorly on multiprocessor and real-time systems,
+is replaced by a 1:1 threading model \parencite{williams_scheduler}. As discussed in Section \ref{load-balancing}, the
+dispatcher balances utilization and affinity by performing heuristic decisions based on observed thread behavior
+\parencite{rasiukevicius2009}. This is recognized as a known limitation to NetBSD, which is relative to ULE's explicit and
+machine-dependent topology awareness \parencite{rasiukevicius2009}. Despite this known limitation, NetBSD employs other
+strategies to improve the scalability of the system. Notably, NetBSD's approach to scalability focuses on expanding to a
+wide range of platforms and architecture instead of scaling vertically. NetBSD is well supported on a wide range
+architectures and instruction sets, which includes VAX minicomputers, modern ARM architectures, Raspberry Pi chipsets,
+and RISC-V architectures \parencite{netbsd_portability}. All of these releases are built on a single source tree. This
+portability-first design makes NetBSD's resource-management abstractions directly align to system architectures
+\parencite{netbsd_portability}. This allows NetBSD to scale well horizontally but incorporating architecture-specific
+optimizations might incur additional overhead. NetBSD is also known for its lightweight scaling, with conducted benchmarks
+by \textcite{gmcgarry} showing that NetBSD offers faster socket-allocation times and a lower increase rate of allocation
+times as the number of allocated sockets grows. This suggests that a lighter-weight design can offer competitive scaling
+especially in network-heavy workloads.
+
+This highlights fundamentally different approaches to scaling. On one hand, FreeBSD pursues \textit{vertical scalability}
+by enabling a single system image to scale to high core counts with NUMA-aware scheduling and per-subsystem locking.
+This design allows FreeBSD to excel well in networking workloads, however, faces limitations on processor-heavy workloads.
+FreeBSD's vertical scaling approach also incurs costs in administrative management with \texttt{rctl}. On the other hand,
+NetBSD pursues \textit{horizontal scalability} by architecturing a single codebase to support a broad range of hardware.
+This approach provides NetBSD with a competitive lightweight performance especially on network primitives, despite its
+performance being counteracted with its heuristic scheduler and the overhead that comes with architecture-specific
+optimizations. This shows that FreeBSD favors optimization depth on hardware that supports it while NetBSD favors
+breadth of portability across different platforms.
+
+\subsection{Summary} \label{resource-summary}
+
+Considering their similar BSD lineage, FreeBSD and NetBSD converge on a lot of resource-management techniques. For
+instance, both treat memory as their most critical resource. Both unify memory storage abstractions in the form of VM objects
+in FreeBSD and UVM \texttt{uobj} objects in NetBSD. Both also use per-CPU run queues with priority inheritance and
+round-robin cycling to limit starvation. Both also adopted a more scalable jemalloc allocator. And lastly, both
+adopt enforcing global lock ordering in deadlock prevention. They differ in the focus of their design choices. FreeBSD
+focuses on the depth of their resource management. This is reflected in their adoption of a single ULE scheduler
+with NUMA-aware and topologically-driven placement, RACCTL/RCTL framework for hierarchical and per-jail resource
+control, a runtime witness deadlock verifier, and fine-grained per-subsystem locking through the SMPng project.
+This depth also brought significant disadvantages to FreeBSD. RACCT's approach on accounting on every allocation is expensive,
+hence it is disabled by default. In addition, RCTL requires explicit boot-time enabling. Witnesses are also too
+expensive to be used in production kernels. Managing \texttt{rctl} also scales poorly as the number of users and jails
+grow. NetBSD focuses on the breadth and leanness of their resource management. This is reflected in their light
+limit-oriented tracking model exposed through \texttt{sysctl} and the POSIX \texttt{setrlimit()}/\texttt{getrlimit()}
+interface, explicit affinity control through their processor and dynamic CPU sets, and support for a wide range
+of architectures from VAX to RISC-V on a single source tree. However, NetBSD suffers from the significant tradeoffs
+of its two primary schedulers, lack of aggregation across jails or login classes, and the possibility of unrecoverable
+freezes from its deadlock prevention approach.
+
+The tradeoffs between FreeBSD and NetBSD in resource management is explicit across the four comparison dimensions.
+In terms of efficiency, while both are able to achieve fine-grained concurrency comparable to each other's implementations,
+FreeBSD's ULE scheduler is able to balance throughput and latency through event-driven time-slice tuning while NetBSD's
+adaptive mutexes default to busy-waiting on short holds. However, FreeBSD's \texttt{sched\_pickcpu()} can consume
+a significant number of CPU cycles when performing placement scanning. NetBSD can also waste CPU spinning under high
+contention. In terms of fairness, both adopt priority mechanisms for enforcing it. However, FreeBSD has the tendency
+to starve background processes in exchange for high responsiveness, which has been verified in benchmarks. In terms
+of scalability, both have opposing directions towards scaling. FreeBSD achieves vertical scaling with its refined
+SMP support and excellent scalings on networking performance. This design, however, comes with NUMA ceilings and
+poor \texttt{rctl} administrative scaling. NetBSD achieves horizontal scaling with its broad hardware support and
+a competitive lightweight performance on network primitives. This design, however, comes with non-optimal performance
+from its heuristic scheduling and overhead from architecture-specific optimizations. In terms of complexity,
+FreeBSD clearly adopted more complex design choices and implementations with its richer enforcement, tooling,
+and configuration surface. This is unlike NetBSD's simpler and uniform design choices, which lacks fine-grained
+resource attribution.
+
+The presented tradeoffs show which specific workloads and environments the two excel at. FreeBSD's hierarchical
+RACCTL/RCTL resource accounting and jail-aware limits, its turnstile-based priority inheritance with dynamically-
+adjusted time slices, and its ULE load balancing managed through push and pull migrations makes FreeBSD excel
+in high-intensity workloads with a large number of users and processes competing for limited resources under
+heavy loads. This comes at a cost of background job starvation and per-operation synchronization overhead.
+Under this same heavy load, NetBSD is more likely to encounter full system freezes because of the high likelihood
+of locking interactions and mixed CPU and I/O loads. In contrast, NetBSD's limit-oriented tracking, its lightweight
+socket-allocation scaling, and its portability-first design makes NetBSD excel in resource-constrained
+workloads with limited CPU and memory resources. FreeBSD's demanding design choices would not excel under
+such environments.
