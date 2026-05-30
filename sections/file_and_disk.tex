@@ -132,7 +132,7 @@ vnodes.
 
 \subsection{Directory Structures} \label{dir-struct} % done
 
-The filesystems in both FreeBSD and NetBSd adopts a hierarchical tree-based structure reminiscent to UNIX filesystems. The root directory of the
+The filesystems in both FreeBSD and NetBSD adopts a hierarchical tree-based structure reminiscent to UNIX filesystems. The root directory of the
 filesystem is the \texttt{/} directory \parencite{freebsd_dir_struct}. Table \ref{root-subdirs} lists the common subdirectories of the
 root directory according to \textcite{freebsd_dir_struct}. Additional filesystems can be integrated with the root filesystem using
 mount points \parencite{freebsd_dir_struct}. The subdirectories \texttt{/cdrom}, \texttt{/mnt} \texttt{/tmp}, \texttt{/usr}, and \texttt{/var}
@@ -288,7 +288,7 @@ a per-file or per-directory approach of access control \parencite{freebsd_securi
 the associated permissions for a file or directory \parencite{freebsd_security}. FreeBSD offers the \texttt{getfacl(1)} and \texttt{setfacl(1)}
 commands for managing the ACL \parencite{freebsd_security}. For FreeBSD, ZFS also introduces a more granular approach to ACLs,
 which is the \textit{NFSv4 ACL} \parencite{oracle_acl2010}. The NFSv4 implementation of the ACL is more reminiscent to
-NT's approach and offers a richer set of access permissions and inheritance semantics in declaring how these parmissions are
+NT's approach and offers a richer set of access permissions and inheritance semantics in declaring how these permissions are
 applied \parencite{oracle_acl2010}. For NetBSD, ACLs along with \textbf{extended attributes (EA)} are supported on later versions
 of NetBSD, starting at NetBSD 10 \parencite{netbsd_ea_acl}. Furthermore, only the syntax of the ACL is known to the vnodes,
 which are representations of files and directories on disk in FFS \parencite{netbsd_acl}. It is also possible for a file or
@@ -297,7 +297,7 @@ directory to be associated with zero or multiple ACLs \parencite{netbsd_acl}.
 FreeBSD extends the read/write/execute permissions with \texttt{setuid}, \texttt{setgid}, and \texttt{sticky} permissions
 \parencite{freebsd_permissions}. \texttt{setuid} replaces the \texttt{x} bit of the owner's permissions with \texttt{s},
 which essentially allows the owner to use utilities that need higher privileges \parencite{freebsd_permissions}. This is often
-enabled when changing user passwords with \tettt{passwd()} \parencite{freebsd_permissions}. \texttt{setgid} performs the same
+enabled when changing user passwords with \texttt{passwd()} \parencite{freebsd_permissions}. \texttt{setgid} performs the same
 operation as \texttt{setuid} on the group's permissions instead of the owner's \parencite{freebsd_permissions}. \texttt{sticky}
 only allows file deletions by the file owner \parencite{freebsd_permissions}. This permission is usually set on a directory
 \parencite{freebsd_permissions}. Additionally, \textit{file flags} extends the set of permissions only for files \parencite{freebsd_basics}.
@@ -507,7 +507,7 @@ operation \parencite{silvers2000}.
 
 The caching approaches of ZFS and FFS vary in their complexity. ZFS's ARC is a deeply layered system with MRU/MFU cache lists, ghost
 tracking and L2ARC for retrieving recently evicted entries, which can be fine-tuned with tunables such as \texttt{arc\_max},
-\texttt{l3arc\_feed\_secs}, and \texttt{logbias}. ARC caching strategy is ideally used in high-storage workloads as it boosts
+\texttt{l2arc\_feed\_secs}, and \texttt{logbias}. ARC caching strategy is ideally used in high-storage workloads as it boosts
 storage access performance. However, this deeply layered system introduces high complexity, which can actually hurt its performance
 instead of boosting it. For instance, L2ARC adds RAM overhead for tracking block pointers. Enabling
 prefetching can degrade performance on workloads that perform a high rate of random-read requests. Careless tuning of the tunables
