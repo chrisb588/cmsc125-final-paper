@@ -1,10 +1,10 @@
 \subsection{Concurrency Model and Support} \label{concurrency-model} % done
 
 FreeBSD's concurrency is centered around its \textbf{1:1 threading model}. This model denotes that for every user-level
-thread, it is backed by a corresponding kernel thread, which has its own kernel stack \parencite{mckusick2014}. The
+thread, it is backed by a corresponding kernel thread, which has its own kernel stack \parencite{mckusick2014_process}. The
 kernel creates the illusion of concurrency by scheduling system resources among the set of ready processes
-\parencite{mckusick2014}. Multiple threads of the same or different processes can be executed in true parallel fashion
-on a multiprocessor, which has different CPUs \parencite{mckusick2014}. Those processors share a single instance of
+\parencite{mckusick2014_process}. Multiple threads of the same or different processes can be executed in true parallel fashion
+on a multiprocessor, which has different CPUs \parencite{mckusick2014_process}. Those processors share a single instance of
 the kernel code and data. This parallelism is enforced by the ULE scheduler with per-CPU run queues and topology-aware
 affinity decisions, as described in \ref{load-balancing-distribution} \parencite{freebsd_smp_handbook}. An interrupt
 that arrives on a CPU than the one running the kernel code is forwarded using \textit{inter-processor interrupts (IPIs)}
@@ -58,7 +58,7 @@ verdict by retiring KSE, and NetBSD reached it by retiring scheduler activations
 system now multiplexes user threads onto a separate pool of kernel contexts, so neither pays the overhead that motivated
 the M:N designs in the first place. What still separates them is how they implemented the 1:1 model. In FreeBSD,
 each user thread is bound to a distinct kernel thread, which keeps its model close to what most kernel code already assumes
-\parencite{mckusick2014}. NetBSD instead treats processes and threads alike as LWPs \parencite{rasiukevicius2009}. That
+\parencite{mckusick2014_process}. NetBSD instead treats processes and threads alike as LWPs \parencite{rasiukevicius2009}. That
 single abstraction is what lets the NetBSD scheduler apply the same time-sharing and real-time policies to every entity,
 exactly as the policy list above reflects \parencite{rasiukevicius2009}.
 
@@ -123,7 +123,7 @@ Readers bracket a critical path with \texttt{pserialize\_read\_enter()} and \tex
 a writer calls \texttt{pserialize\_perform()} to block until all concurrent readers have exited \parencite{netbsd_pserialize}.
 This permits reads even in software-interrupt context at \texttt{IPL\_SOFTCLOCK} without acquiring any lock
 \parencite{netbsd_pserialize}. The cost is that \texttt{pserialize\_perform()} is confined to the thread context
-\parencite{netbsd_pserialzie}. Table \ref{netbsd-context-matrix} lists which primitives are valid in each execution
+\parencite{netbsd_pserialize}. Table \ref{netbsd-context-matrix} lists which primitives are valid in each execution
 context. The matrix aids kernel developers in selecting the appropriate primitive for a given context, which is a direct
 expression of NetBSD's focus on correctness and portability. For userland inter-process synchronization, NetBSD supports
 POSIX and System V IPC \parencite{netbsd_tuning}. This includes named semaphores via \texttt{sem\_open()}, SysV semaphore
@@ -194,10 +194,10 @@ lock plays a role similar to the IPC by serializing access to the VFS layer and 
 \subsection{Handling Critical Sections and Race Conditions} \label{critical-sections} % done
 
 Critical sections in FreeBSD can be entered with \texttt{critical\_enter()} and exited with \texttt{critical\_exit()}
-\parencite{mckusick2014_sync}. It prevents context switches on the current CPU, so neither preemption nor migration can occur
-while inside it \parencite{mckusick2014_sync}. Critical sections carry less overhead than locks and allow for short operations on
-per-CPU run queues and allocators \parencite{mckusick2014_sync}. However, they protect only the current CPU and does not provide
-for system-wide shared data \parencite{mckusick2014_sync}. This is significant because FreeBSD's preemptive kernel allows a thread
+\parencite{mckusick2014_process}. It prevents context switches on the current CPU, so neither preemption nor migration can occur
+while inside it \parencite{mckusick2014_process}. Critical sections carry less overhead than locks and allow for short operations on
+per-CPU run queues and allocators \parencite{mckusick2014_process}. However, they protect only the current CPU and does not provide
+for system-wide shared data \parencite{mckusick2014_process}. This is significant because FreeBSD's preemptive kernel allows a thread
 to migrate to another CPU at any time an interrupt triggers preemption, which can make unprotected per-CPU access unsafe
 \parencite{freebsd_smp_handbook}. A critical section defers any ongoing preemption until \texttt{critical\_exit()} is called
 \parencite{freebsd_smp_handbook}. Consequently, it can blocks interrupt threads on the current processor, which can raise interrupt
@@ -349,10 +349,10 @@ NetBSD's conversion is more deliberate but partial, which leaves the network sta
 \subsection{Performance and Overhead} \label{concurrency-performance} % done
 
 FreeBSD's blocking mutex is cheaper than a spin mutex in the uncontested case, which requires only a single atomic
-compare-and-swap to acquire or release \parencite{mckusick2014_sync}. A contested release is far more expensive because the
-kernel must locate the turnstile, lock the turnstile chain, and wake the waiters \parencite{mckusick2014_sync}.
+compare-and-swap to acquire or release \parencite{mckusick2014_process}. A contested release is far more expensive because the
+kernel must locate the turnstile, lock the turnstile chain, and wake the waiters \parencite{mckusick2014_process}.
 Adaptive spinning mitigates this by letting a waiter spin when the holder is running on another CPU instead of
-entering the costly block-and-wakeup cycle \parencite{mckusick2014_sync}. Locking too finely appeared during the netperf work
+entering the costly block-and-wakeup cycle \parencite{mckusick2014_process}. Locking too finely appeared during the netperf work
 \parencite{freebsd_netperf}. The first attempt at fine-grained network-stack locking introduced a lock at every critical
 structure, wherein the resulting granularity was so excessive that locking overhead overwhelmed the available
 parallelism \parencite{freebsd_netperf}. This was fixed by selectively coarsen and amortizing cost by grouping the

@@ -1,10 +1,10 @@
 \subsection{Resources Managed} \label{resources-managed} % done
 
 FreeBSD manages system resources such as the underlying CPU, main memory, pipes, sockets, files, and disk devices
-\parencite{mckusick2014}. System resources such as pipes, sockets, files, and disk devices can be accessed by the
+\parencite{mckusick2014_process}. System resources such as pipes, sockets, files, and disk devices can be accessed by the
 \textit{descriptor array}, which is one of the kernel resources FreeBSD manages aside from credentials and signal states
-\parencite{mckusick2014}. Each process is assigned to its own descriptor array listing down the devices it can
-use \parencite{mckusick2014}. Each thread is assigned to its own set of registers, program counter, and stack \parencite{mckusick2014}.
+\parencite{mckusick2014_process}. Each process is assigned to its own descriptor array listing down the devices it can
+use \parencite{mckusick2014_process}. Each thread is assigned to its own set of registers, program counter, and stack \parencite{mckusick2014_process}.
 CPU and memory are the most preemptable resources while accessing serial I/O ports cannot be preempted and requires
 exclusive access. Comprehensive resource tracking and management in FreeBSD is handled by the \texttt{rctl} command
 \parencite{wojtczak2022}. Configurations such as \texttt{cputime}, \texttt{memoryuse} for resident set size,
@@ -61,8 +61,8 @@ primary virtualization mechanism \parencite{freebsd_jails}.
 Dynamic CPU allocation in FreeBSD is managed by the \textbf{ULE scheduler}, which is FreeBSD's primary CPU scheduling algorithm
 \parencite{mckusick2014_process}. ULE enforces both fairness and priority in scheduling processes \parencite{mckusick2014_process}.
 This is done by finding a stable equilibrium from by assigning a proportional CPU time depending on the nice value instead
-of disproportionally allotting CPU time to the highest priority process \parencite{robserson_ule}.
-ULE achieves this with per-CPU run queues and CPU topology model \parencite{robserson_ule}.
+of disproportionally allotting CPU time to the highest priority process \parencite{roberson_ule}.
+ULE achieves this with per-CPU run queues and CPU topology model \parencite{roberson_ule}.
 The ULE scheduler has different scheduling mechanisms for interactive and non-interactive threads. For interactive threads,
 their priority numbers are gradually boosted to improve the system's responsiveness \parencite{mckusick2014_process}. While
 for non-interactive threads, they are added to a time-sharing queue \parencite{mckusick2014_process}. This allows non-interactive
@@ -136,10 +136,10 @@ tracking system would be imprecise \parencite{freebsd_resource_limits}. As a con
 somewhat imprecise, but not critically imprecise \parencite{freebsd_resource_limits}.
 
 Resource reclamation in FreeBSD is a two-phase event which is tied to terminating a process.
-When a process is terminated, the \texttt{exit()} routine is called to kill all threads associated with that process \parencite{mckusick2014_term}.
+When a process is terminated, the \texttt{exit()} routine is called to kill all threads associated with that process \parencite{mckusick2014_process}.
 Additionally, it also resets the execution state on kernel mode, removes the process from the \texttt{allproc} list, and moves that process
-to the zombie list specified by \texttt{zombproc} \parencite{mckusick2014_term}. The accumulated resource usage is bundled into a
-\texttt{p\_ru} structure which is retained for the parent to be retrieved by calling the \texttt{wait4()} function \parencite{mckusick2014_term}.
+to the zombie list specified by \texttt{zombproc} \parencite{mckusick2014_process}. The accumulated resource usage is bundled into a
+\texttt{p\_ru} structure which is retained for the parent to be retrieved by calling the \texttt{wait4()} function \parencite{mckusick2014_process}.
 The kernel then reclaims all descriptors that were in use. If the terminating process holds the final reference to an object such as a file or a
 socket, the object's manager is notified to perform some final cleanup such as deleting the file or deallocating the socket
 \parencite{freebsd_design4bsd}. For performance-sensitive workloads wherein always-on accounting is too expensive, FreeBSD provides a profiling
@@ -180,12 +180,12 @@ run queues with two complementary mitigation strategies. When a CPU becomes idle
 prevent excessive migration and cache thrashing \parencite{mckusick2020}. Thread affinity and processor utilization
 are treated by ULE as differing goals that need to be addressed during placement. \texttt{sched\_pickcup()} selects the best CPU when a
 thread can be executed by balancing thread affinity, current load, and topology relationships such as cache sharing and NUMA proximity
-\parencite{robserson_ule}. This is evaluated on three events: a thread becomes runnable, a CPU goes idle, and the periodic rebalancer
+\parencite{roberson_ule}. This is evaluated on three events: a thread becomes runnable, a CPU goes idle, and the periodic rebalancer
 ticks \parencite{mckusick2014_process}. This avoids overhead that comes with constant recalculations, however, it can leave short-term
 imbalances between ticks \parencite{mckusick2014_process}. Furthermore, ULE treats symmetric multithreading as a special case of NUMA,
 wherein scheduling two threads from the same process onto related logical CPUs are prevented unless necessary with CPU topology information
 provided by machine-dependent code \parencite{roberson_ule}. This can improve cache efficiency and reduce contention between threads sharing
-the same physical execution units \parencite{robserson_ule}. When compared against Linux's CFS, it was found by \textcite{bouron2018}
+the same physical execution units \parencite{roberson_ule}. When compared against Linux's CFS, it was found by \textcite{bouron2018}
 that ULE achieves a better long-term load balancing when compared to CFS. However, ULE might cause temporary starvation on identical threads,
 which can apparently improve throughput on some workloads by concentrating CPU time on active threads \parencite{bouron2018}.
 
@@ -227,8 +227,8 @@ the \texttt{WITNESS\_SKIPSPIN} option skips the frequently acquired spin locks, 
 \parencite{freebsd_kerneldebug}. Because of the extremely high performance cost it comes with, witness is disabled in production
 kernels and is only accessible in development environments \parencite{baldwin2002}. FreeBSD also prevents specific deadlock classes
 structurally. For instance, a spin mutex can disable interrupts on the local CPU while being held so that another interrupt cannot
-attempt to reacquire the same mutex being held by the interrupted thread \parencites{mckusick2014_sync}{freebsd_mutex}. This, however,
-comes at the cost of increased interrupt latency \parencites{mckusick2014_sync}{freebsd_mutex}. FreeBSD also incorporates an
+attempt to reacquire the same mutex being held by the interrupted thread \parencites{mckusick2014_process}{freebsd_mutex}. This, however,
+comes at the cost of increased interrupt latency \parencites{mckusick2014_process}{freebsd_mutex}. FreeBSD also incorporates an
 additional role that distinguishes \textit{bonded sleeps}, which blocks acquisitions for a block when it is currently owned by
 a specific process, from \textit{unbounded sleeps}, which waits for an external event \parencite{freebsd_locking}. A thread in a
 bounded sleep must never wait on a lock being held by a thread in an unbounded sleep \parencite{freebsd_locking}. Moreover,
@@ -256,12 +256,12 @@ In contrast, NetBSD's prevention-only model leaves complex codepaths exposed to 
 \subsection{Resource Contention and Resolution} \label{resource-contention} % done
 
 When multiple threads compete for a short-term lock such as a mutex, reader-writer lock, or read-mostly lock, FreeBSD tracks both
-the lock owner and waiting threads in a \textbf{tunstile} data structure \parencite{mckusick2014_sync}. The waiting threads
+the lock owner and waiting threads in a \textbf{tunstile} data structure \parencite{mckusick2014_process}. The waiting threads
 are sorted within the turnstile by priority. FreeBSD also enforces a form of \textit{priority inheritance} wherein priority is
-recursively propagated to the owner if a waiter has a higher priority than the current lock holder \parencite{mckusick2014_sync}.
+recursively propagated to the owner if a waiter has a higher priority than the current lock holder \parencite{mckusick2014_process}.
 The tunstile state itself is allocated from a pool when a contention do occur since a thread can sleep on one mutex at a time
-\parencite{mckusick2014_sync}. This ensures that the number of simultaneously active turnstiles never exceeds the number of
-threads \parencite{mckusick2014_sync}. This also controls potential memory overhead fluctuations \parencite{mckusick2014_sync}.
+\parencite{mckusick2014_process}. This ensures that the number of simultaneously active turnstiles never exceeds the number of
+threads \parencite{mckusick2014_process}. This also controls potential memory overhead fluctuations \parencite{mckusick2014_process}.
 
 At the scheduling level, the ULE scheduler prevents CPU starvation among threads with the same priority with time slices
 \parencite{mckusick2014_process}. A time slice sets the maximum latency of a thread of a given priority before running
@@ -271,7 +271,7 @@ is then adopted for cycling through these threads with the same priority under h
 This approach is in contrast to the traditional BSD scheduler, which makes use of a single global run queue and a single global
 scheduler lock, which becomes a contention bottleneck as the number of runnable threads increases \parencite{mckusick2014_process}.
 This often happens since priority calculations need to iterate over every runnable thread while holding highly contended locks,
-blocking forks, exits, and context switches at the same time in the process \parencite{mckusick2014_rpcoess}. For lock-level
+blocking forks, exits, and context switches at the same time in the process \parencite{mckusick2014_process}. For lock-level
 contention, FreeBSd leans on \textit{lent priority} in bounded sleeps \parencite{freebsd_locking}. In this approach, a thread
 currently waiting on a mutex lends its priority to the owner to allow the owner to be prioritized over low-priority threads,
 which allows the lock to be released sooner \parencite{freebsd_locking}. For unbounded sleeps, blocked threads are awakened
@@ -306,7 +306,7 @@ mechanism prevents such limitations, but brings its own set of tradeoffs by incr
 cost through synchronization, which requires active tuning \parencite{freebsd_smp}. At the scheduling layer, the ULE scheduler's
 event-driven design achieves a good balance of efficiency and fairness \parencite{roberson_ule}. This balance is achieved by
 penalizing threads that consume their entire time slice and boosting waiting threads that do not consume their entire time slice
-\parencite{robserson_ule}. This balance is also achieved by assigning smaller time slices to high-priority and interactive
+\parencite{roberson_ule}. This balance is also achieved by assigning smaller time slices to high-priority and interactive
 threads and assigning large time slices to low-priority and CPU-bound threads \parencite{roberson_ule}. This efficiency has
 has been studied by \textcite{bouron2018} by conducting benchmarks on the ULE. \textcite{bouron2018} found that
 \texttt{sched\_pickcpu()} may scan all CPU cores by up to three times when selecting a placement, which results in consuming
@@ -327,7 +327,7 @@ and filesystem frameworks \parencites{lwn330994}{lwn332022}. This improvement re
 fine-grained concurrent algorithms and allowing multiple processors to run kernel code simultaneously \parencites{lwn330994}{lwn332022}.
 NetBSD's adaptive mutexes embody a similar balance between efficiency and correctness, which defaults to busy-waiting when hold times
 are expected to be short to avoid context-switching overhead in the common case \parencite{netbsd_locking}. However, this can
-result in potentially spending a lot of CPU time spinning under high contention before going back to sleeping \parencite{netbsd_locing}.
+result in potentially spending a lot of CPU time spinning under high contention before going back to sleeping \parencite{netbsd_locking}.
 A case study conducted by \textcite{brown_seltzer} explored NetBSD's performance across Intel x86 generations and found that
 off-chip memory-system design significantly influences the performance of the operating system. Furthermore, it has been found
 that some kernel design decisions for dealing with cache and memory-bus constraints do not always transfer between chip

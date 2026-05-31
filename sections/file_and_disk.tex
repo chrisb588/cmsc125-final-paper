@@ -377,7 +377,7 @@ recovery, serving as an alternative
 to the journaled-filesystem approach \parencites{ganger1994}{mckusick1996}{netbsd_6.0}.
 Soft updates ensure the integrity of file system metadata in an event of a crash by eliminating inconsistencies in the filesystem
 on-disk \parencite{mckusick_ganger1999}. This is done by preventing metadata writes that renders the filesystem inconsistent and
-enforcing rollbacks on metadata blocks that rely on potentially non-flushed blocks on write \parencite{mkcusick_ganger1999}.
+enforcing rollbacks on metadata blocks that rely on potentially non-flushed blocks on write \parencite{mckusick_ganger1999}.
 With this approach, the operating system only needs to perform a background walk on the filesystem to free any orphaned space
 \parencite{mckusick_ganger1999}. \textcite{mckusick2012} proposed an improvement to the
 soft-update tracking system by implementing a journaling mechanism that keeps track of the inconsistencies produced by the
