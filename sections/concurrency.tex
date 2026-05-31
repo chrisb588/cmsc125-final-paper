@@ -1,0 +1,504 @@
+\subsection{Concurrency Model and Support} \label{concurrency-model} % done
+
+FreeBSD's concurrency is centered around its \textbf{1:1 threading model}. This model denotes that for every user-level
+thread, it is backed by a corresponding kernel thread, which has its own kernel stack \parencite{mckusick2014}. The
+kernel creates the illusion of concurrency by scheduling system resources among the set of ready processes
+\parencite{mckusick2014}. Multiple threads of the same or different processes can be executed in true parallel fashion
+on a multiprocessor, which has different CPUs \parencite{mckusick2014}. Those processors share a single instance of
+the kernel code and data. This parallelism is enforced by the ULE scheduler with per-CPU run queues and topology-aware
+affinity decisions, as described in \ref{load-balancing-distribution} \parencite{freebsd_smp_handbook}. An interrupt
+that arrives on a CPU than the one running the kernel code is forwarded using \textit{inter-processor interrupts (IPIs)}
+\parencite{freebsd_smp_handbook}. This concurrency model was not initially adopted by FreeBSD. On its 5.0 release, it
+incorporates \textbf{Kernel Scheduled Entities (KSE)}, which is an intermediary model that adopted an M:N threading
+model \parencite{freebsd_libthr}. The KSE multiplexed user threads over a small number of kernel-level virtual processors,
+which became the default in FreeBSD 5.3 \parencite{freebsd_libthr}. It was eventually replaced by the now 1:1 threading
+model in FreeBSD 7.0 since it outperformed the M:N model enforced by the \texttt{libkse} library \parencite{freebsd_libthr}.
+In FreeBSD 8.0, KSE was eventually removed \parencite{freebsd_libthr}. While the M:N model reduces kernel-thread overheads,
+it actually introduced more complexity in terms of I/O blocking and signal handling \parencite{freebsd_libthr}, which
+might be one of the key reasons as to why it was replaced with the now 1:1 model. Synchronizing concurrent processes
+is achieved by FreeBSD's adapive blocking mutex primitive \parencite{freebsd_locking}. If the owner of a contended mutex
+is running on another CPU, the acquiring thread does not yield but rather spins \parencite{freebsd_locking}. Inversely,
+if the owner is not running, the thread blocks until the mutex is released \parencite{freebsd_locking}. This mechanism
+results in short hold times and achieves a good balance between spin and sleep locking \parencite{freebsd_locking}.
+
+NetBSD also adopted a 1:1 threading model which was first introduced in NetBSD 5.0 \parencite{rasiukevicius2009}.
+Similar to FreeBSD's concurrency model, each user-level thread, called a \texttt{pthread}, is mapped to a kernel-level
+process or the \textbf{light-weight process (LWP)} \parencite{rasiukevicius2009}. Inside the kernel, traditional processes
+and POSIX threads are both represented as LWPs which are being scheduled similarly \parencite{rasiukevicius2009}.
+Similar to FreeBSD, this current threading model replaced an older hybrid M:N model which was first proposed by
+\textcite{anderson1991}, which was implemented by \textcite{williams_scheduler} for the same reasons. At the same time,
+NetBSD rewrote its entire synchronization subsystem. Previously in NetBSD 4.0, the kernel used to rely on spinlocks
+and a per-CPU interrupt priority level which is set with \texttt{spl(9)} \parencite{netbsd_locking}. These mechanisms
+did not support kernel preemption, hence they were not suitable for multiprocessors \parencite{netbsd_locking}. Hence,
+they were replaced with thread-based adaptive mutexes, reader-writer locks, and condition variables, which were adopted
+in NetBSD 5.0 \parencite{netbsd_locking}.
+
+The NetBSD scheduler treats every LWP uniformly and supports the following POSIX scheduling policies:
+
+\begin{itemize}
+	\item \texttt{SCHED\_OTHER}: the default time-sharing policy, in which each LWP carries a dynamically recalculated
+	      priority and time quantum \parencite{rasiukevicius2009}.
+
+	\item \texttt{SCHED\_FIFO}: a real-time first-in-first-out policy whose threads hold fixed priorities and run until
+	      they complete or block \parencite{rasiukevicius2009}.
+
+	\item \texttt{SCHED\_RR}: a real-time round-robin policy in which threads at the same priority are cycled
+	      within their class \parencite{rasiukevicius2009}.
+\end{itemize}
+
+\noindent
+Additionally, the kernel maintains 224 priority levels \parencite{sh4nnu2020}. Of these 224 levels, 64 are available
+to user-level scheduling policies \parencite{sh4nnu2020}. The Common Scheduler Framework, which was introduced in
+NetBSD 5.0, lets the 4BSD and M@ scheduling algorithms previously discussed in Section \ref{resource-allocation-strats}
+be selected at compile time \parencite{sh4nnu2020}.
+
+The two systems reached the same destination by different routes. Both abandoned M:N threading once they judged its
+conceptual elegance not worth its implementation complexity \parencite{freebsd_libthr}. FreeBSD reached that
+verdict by retiring KSE, and NetBSD reached it by retiring scheduler activations \parencite{rasiukevicius2009}. Neither
+system now multiplexes user threads onto a separate pool of kernel contexts, so neither pays the overhead that motivated
+the M:N designs in the first place. What still separates them is how they implemented the 1:1 model. In FreeBSD,
+each user thread is bound to a distinct kernel thread, which keeps its model close to what most kernel code already assumes
+\parencite{mckusick2014}. NetBSD instead treats processes and threads alike as LWPs \parencite{rasiukevicius2009}. That
+single abstraction is what lets the NetBSD scheduler apply the same time-sharing and real-time policies to every entity,
+exactly as the policy list above reflects \parencite{rasiukevicius2009}.
+
+\subsection{Process Synchronization} \label{process-synchronization} % done
+
+The FreeBSD kernel offers a variety of synchronization primitives, each tuned to a specific access pattern. Table
+\ref{freebsd-sync-primitives} summarizes them. The primary primitive is the \textit{adaptive blocking mutex}, which
+protects short-lived shared data \parencite{freebsd_locking}. As previously mentioned in Section \ref{concurrency-model},
+the mutex spins if the holder is on-CPU and blocks otherwise \parencite{freebsd_locking}. It also fully supports
+priority propagation through the turnstile mechanism to prevent priority inversion \parencite{freebsd_locking}.
+This primitive prevents a thread from sleeping while holding a thread. This is enforced by \texttt{INVARIANTS},
+which simplifies lock-order reasoning and prevents mutexes from spanning long operations such as disk I/O operations
+\parencite{freebsd_locking}. \textit{Reader-writer locks} or \texttt{rwlock()} extend this with shared and exclusive
+modes \parencite{freebsd_locking}. They propagate priority for exclusive writers but not for anonymous shared readers
+\parencite{freebsd_locking}. They also may not be held across an unbounded sleep \parencite{freebsd_locking}. The
+\textit{read-mostly lock} or \texttt{rmlock()} targets rarely-written data \parencite{freebsd_rmlock}. It resolves
+the anonymous-reader problem by propagating priority to both readers and writers through a caller-supplied
+\texttt{rm\_priotracker} struct \parencite{freebsd_rmlock}. This choice places the allocation burden on the caller's
+stack and also maintains a per-CPU reader list, which can become a bottleneck in it of itself when many read-mostly
+locks are being used at the same time \parencite{freebsd_rmlock}.
+
+\begin{table}[!htb]
+	\centering
+	\begin{tabular}{|c|p{0.72\textwidth}|}
+		\hline
+		\textbf{Primitive} & \textbf{Description}                                                                                                                                                        \\
+		\hline\hline
+		\texttt{mutex()}   & Adaptive blocking lock for short-lived shared data. Spins if the holder is on-CPU and blocks otherwise. Propagates priority via turnstiles. May not be held while sleeping. \\ \hline
+		\texttt{rwlock()}  & Reader-writer lock permitting many concurrent readers or one writer. Propagates priority for writers but not anonymous readers. May not be held across unbounded sleep.     \\ \hline
+		\texttt{rmlock()}  & Read-mostly lock for rarely-written data. Propagates priority to readers and writers via a caller-supplied \texttt{rm\_priotracker}. Tracks readers in a per-CPU list.      \\ \hline
+		\texttt{sx()}      & Shared/exclusive lock that may be held during unbounded sleep, suiting VFS and buffer-cache operations. Does not support priority propagation.                              \\ \hline
+		\texttt{sema()}    & Counting semaphore for resource pools and producer-consumer patterns. Has no owner concept. Largely deprecated in favor of mutexes and condition variables.                 \\ \hline
+		\texttt{condvar()} & Condition variable paired with a blocking lock. Atomically releases the lock and sleeps, then reacquires it on wakeup to avoid lost wakeups.                                \\ \hline
+	\end{tabular}
+	\caption{FreeBSD Kernel Synchronization Primitives \parencites{freebsd_locking}{freebsd_rmlock}{freebsd_sema}}
+	\label{freebsd-sync-primitives}
+\end{table}
+
+The remaining FreeBSD primitives trade priority propagation for sleep tolerance or generality. The \textit{counting semaphore} or
+\texttt{sema()} synchronizes access to a pool of resources \parencite{freebsd_sema}. It also supports producer-consumer
+patterns where one thread acquires and another releases \parencite{freebsd_sema}. \textcite{freebsd_sema} deprecates them
+because of their complexity and inefficiency when compared to mutexes and condition variables. The \textit{shared/exclusive lock}
+or \texttt{sx()} resembles a reader-writer lock but may be held during an unbounded sleep \parencite{freebsd_locking}.
+This makes it suitable for VFS and buffer-cache operations that block waiting threads for I/O \parencite{freebsd_locking}.
+However, unlike mutexes and reader-writer locks, it does not propagate priority, so a high-priority thread waiting on an
+\texttt{sw} lock cannot accelerate its holder \parencite{freebsd_locking}. \textit{Condition variables} or \texttt{condvar()}
+pair with any blocking lock and let a thread sleep atomically \parencite{freebsd_locking}. They release the associated
+lock before yielding and reacquire it on wakeup, which prevents lost wakeups \parencite{freebsd_locking}.
+
+NetBSD's synchronization primitive set is also similar to FreeBSD's, but it is largely documented around explicit
+usage preconditions and execution contexts. The adaptive mutex or \texttt{mutex()} requires a constant acquisition
+order across all code paths \parencite{netbsd_mutex}. \textcite{netbsd_mutex} prescribes an optimistic \texttt{mutex\_tryenter()}
+pattern where reverse-order acquisition is unavoidable. If the attempt fails, both locks are released and reacquired in
+the original order \parencite{netbsd_mutex}. This pattern is a code-level compensation for the absence of a witness-like
+detector in production kernels \parencite{netbsd_mutex}. The reader-writer lock or \texttt{rwlock()} is documented with
+three explicit preconditions for appropriate use according to \textcite{netbsd_rwlock}. For instance, the data must be read
+far more often than written on the order of thousands of cycles \parencite{netbsd_rwlock}. Furthermore, strong synchronization
+semantics are required for this approach \parencite{netbsd_rwlock}. When these do not hold, \textcite{netbsd_rwlock}
+recommends restructuring the implementation that needs fewer or weaker synchronization points. For read-mostly data, NetBSD
+also offers a passive serialization mechanism with \texttt{pserialize()} for lock-free reads \parencite{netbsd_pserialize}.
+Readers bracket a critical path with \texttt{pserialize\_read\_enter()} and \texttt{pserailize\_read\_exit()}, while
+a writer calls \texttt{pserialize\_perform()} to block until all concurrent readers have exited \parencite{netbsd_pserialize}.
+This permits reads even in software-interrupt context at \texttt{IPL\_SOFTCLOCK} without acquiring any lock
+\parencite{netbsd_pserialize}. The cost is that \texttt{pserialize\_perform()} is confined to the thread context
+\parencite{netbsd_pserialzie}. Table \ref{netbsd-context-matrix} lists which primitives are valid in each execution
+context. The matrix aids kernel developers in selecting the appropriate primitive for a given context, which is a direct
+expression of NetBSD's focus on correctness and portability. For userland inter-process synchronization, NetBSD supports
+POSIX and System V IPC \parencite{netbsd_tuning}. This includes named semaphores via \texttt{sem\_open()}, SysV semaphore
+arrays, shared memory through \texttt{shmget}/\texttt{shmat}, and message queues \parencite{netbsd_tuning}. These are all
+inspectable by calling \texttt{ipcs()} \parencite{netbsd_tuning}. SysV shared memory can optionally be pinned in physical
+memory via \texttt{kern.ipc.shm\_use\_phys} to keep it from being paged out, which can benefit database workloads
+\parencite{netbsd_tuning}.
+
+\begin{table}[!htb]
+	\centering
+	\begin{tabular}{|p{0.34\textwidth}|c|c|c|}
+		\hline
+		\textbf{Primitive}                            & \textbf{Thread} & \textbf{Soft Interrupt} & \textbf{Hard Interrupt} \\
+		\hline\hline
+		Adaptive mutex (\texttt{mutex()})             & Yes             & Context-dependent       & Context-dependent       \\ \hline
+		Reader-writer lock (\texttt{rwlock()})        & Yes             & Yes                     & No                      \\ \hline
+		Condition variable (\texttt{condvar()})       & Yes             & Partial                 & No                      \\ \hline
+		Passive serialization (\texttt{pserialize()}) & Yes             & Yes                     & No                      \\ \hline
+		Interrupt priority level (\texttt{spl()})     & Yes             & No                      & No                      \\ \hline
+		Atomic operations (\texttt{atomic\_ops()})    & Yes             & Yes                     & Yes                     \\ \hline
+	\end{tabular}
+	\caption{Validity of NetBSD Synchronization Primitives by Execution Context \parencites{netbsd_locking}{netbsd_atomic_ops}}
+	\label{netbsd-context-matrix}
+\end{table}
+
+While both FreeBSD and NetBSD adopts the same synchronization primitives, they are documented differently by their
+manual pages. Kernel developers working in FreeBSD need to explicitly select primitives that provide a good balance
+of priority propagation and sleep tolerance for a specific workload. FreeBSD also offered a rich variety of lock types
+to choose from \parencite{freebsd_locking}. This is unlike NetBSD, that offers a much smaller set which is being governed
+by explicit preconditions. This smaller set nudges NetBSD developers towards minimal synchronization rather than
+more specialized synchronizationThis smaller set nudges NetBSD developers towards minimal synchronization rather than
+more specialized synchronization. The documentation also provides a context-validity matrix that better represents which
+contexts are ideal for specific named locks. Another point of contrast is FreeBSD's \texttt{rmlock} and NetBSD's
+\texttt{pserialize}. While both make reads cheap on rarely-written data, the \texttt{rmlock} performs priority propagation
+while \texttt{pserialize} drops locking on the read side. FreeBSD's approach therefore aligns with its emphasis on
+correct behavior under contention, while NetBSD's implementation keeps synchronization small but forces
+blocks on writes until all the readers have been freed.
+
+\subsection{Inter-Process Communication (IPC)} \label{ipc} % done
+
+While FreeBSD provides a variety of IPC mechanisms, two of them are most used, which are pipes and sockets. \textit{Pipes}
+are unidirectional and unnamed byte-stream channels between processes that share a common parent \parencite{bellthomas2020}.
+\textit{Sockets} are bidirectional and more adaptable with support for more complex packet structures and network
+communication \parencite{bellthomas2020}. Notably, FreeBSD no longer stacks pipes on top of sockets but rather adopts
+a separate implementation that is built directly on the VM system \parencite{bellthomas2020}. A study conducted by
+\textcite{bellthomas2020} on FreeBSD's performance found that pipes outperform local socket pairs by 63\% on average
+across all configurations. This gap comes from how pipes implement VM optimizations, which transfer data between processes
+by page-flipping instead of copying \parencite{bellthomas2020}. This cannot be replicated by sockets since their versatile
+design requires an in-kernel buffer model \parencite{bellthomas2020}. Optimal throughput for both pipes and sockets can
+reach around 32--64K range with transmission buffers, which results in increased buffer-management overhead and performance
+degradation when exceeding that range \parencite{bellthomas2020}.
+
+In sending files over the network, FreeBSD provides the \texttt{sendfile()} system call, which first appeared in FreeBSD 3.0
+\parencite{freebsd_sendfile}. \texttt{sendfile()} performs zero-copy file-to-socket transfer by building an \texttt{mbuf}
+chain that points to resident file pages in the cache \parencite{freebsd_sendfile}. This chain is then passed to the TCP/IP stack
+\parencite{freebsd_sendfile}. This eliminates two copy operations and the memory pressure of duplicating cached data
+\parencite{freebsd_sendfile}. This approach significantly contributes to FreeBSD's strength in managing high-volume content.
+However, this is only operable in the disk-to-network direction and cannot be served as a general zero-copy proxy
+\parencite{freebsd_sendfile}. FreeBSD supports the full System V IPC suite alongside POSIX variants at the highest
+bandwidth length \parencite{tyk_sysvipc}. SysV shared memory eliminates copying entirely by mapping the same physical pages
+into multiple address spaces \parencite{tyk_sysvipc}.  This makes it the dominant mechanism for database
+workloads \parencite{tyk_sysvipc}. However, this mechanism does not provide built-in synchronization, hence processes
+must coordinate access with separate semaphores or mutexes \parencite{tyk_sysvipc}. Inside the kernel, the shared/exclusive
+lock plays a role similar to the IPC by serializing access to the VFS layer and buffer cache while permitting concurrent reads
+\parencite{freebsd_smp_lock_strategies}. FreeBSD often layers lock types as well, protecting the parent-process pointer with both the
+\texttt{proctree\_lock} \texttt{sx} lock and a per-process mutex \parencite{freebsd_smp_lock_strategies}.
+
+\subsection{Handling Critical Sections and Race Conditions} \label{critical-sections} % done
+
+Critical sections in FreeBSD can be entered with \texttt{critical\_enter()} and exited with \texttt{critical\_exit()}
+\parencite{mckusick2014_sync}. It prevents context switches on the current CPU, so neither preemption nor migration can occur
+while inside it \parencite{mckusick2014_sync}. Critical sections carry less overhead than locks and allow for short operations on
+per-CPU run queues and allocators \parencite{mckusick2014_sync}. However, they protect only the current CPU and does not provide
+for system-wide shared data \parencite{mckusick2014_sync}. This is significant because FreeBSD's preemptive kernel allows a thread
+to migrate to another CPU at any time an interrupt triggers preemption, which can make unprotected per-CPU access unsafe
+\parencite{freebsd_smp_handbook}. A critical section defers any ongoing preemption until \texttt{critical\_exit()} is called
+\parencite{freebsd_smp_handbook}. Consequently, it can blocks interrupt threads on the current processor, which can raise interrupt
+latency \parencite{freebsd_smp_handbook}. For finer-grained ordering without a full lock, FreeBSD provides atomic operations with
+acquire and release semantics \parencite{freebsd_atomic}. On one hand, an acquire barrier on lock acquisition prevents loads and
+stores from being reordered before it \parencite{freebsd_atomic}. On the other hand, a release barrier on unlock prevents
+reordering after it \parencite{freebsd_atomic}. Both of these barriers provide the memory ordering that makes writing data inside a
+critical section visible to other CPUs that will later acquire the same lock \parencite{freebsd_atomic}.
+FreeBSD exposes improperly handled critical sections and race conditions during development through the \texttt{INVARIANTS} kernel
+option \parencite{freebsd_debugging}. This option enables thousands of runtime integrity checks converting silent data corruption
+into a kernel panic with a stack trace \parencite{freebsd_debugging}. Because of its runtime cost, \texttt{INVARIANTS} is
+disabled in production \parencite{freebsd_debugging}. Instead, the kernel relies on its locking hierarchy together with the \texttt{WITNESS}
+verifier described in Section \ref{handling-deadlock} to expose violations before deployment \parencite{freebsd_debugging}.
+
+NetBSD handles kernel preemption with \texttt{kpreempt\_disable()} and \texttt{kpreempt\_enable()}
+\parencite{netbsd_kpreempt}. Preemption is also disabled in several cases, which includes cases whenever the interrupt priority
+level is raised above \texttt{IPL\_NONE} through \texttt{spl()}, whenever a spinning mutex is held, or whenever \texttt{kernel\_lock}
+is held \parencite{netbsd_kpreempt}. Each of these prevents the calling thread from migrating during a sensitive operation
+\parencite{netbsd_kpreempt}. NetBSD offers the architecture-independent \texttt{atomic\_ops()} read-modify-write interface for
+fine-grained ordering \parencite{netbsd_atomic_ops}. Its guarantees are deliberately weaker than on a single architecture
+\parencite{netbsd_atomic_ops}. Where hardware compare-and-swap is available, stores become globally visible before the atomic
+operation completes \parencite{netbsd_atomic_ops}. Code needing surrounding loads and stores ordered must add \texttt{membar\_ops()}
+memory barriers since atomic operations are only ordered with one another \parencite{netbsd_atomic_ops}. This requirement adds
+extra burden when compared with x86-only systems where atomics imply full barriers \parencite{netbsd_atomic_ops}.
+This mechanism coexists with the legacy \texttt{spl()} interface, which is  still valid in thread context but not in interrupt
+context \parencite{netbsd_locking}. This masks interrupts to keep handlers from racing code that holds an elevated IPL
+\parencite{netbsd_locking}.
+
+The two systems share a prevention-first stance, but they differ in where they place the burden and how they verify it.
+Both disable preemption or migration to protect per-CPU data. Both also supply architecture-aware atomic and barrier primitives
+NetBSD adds the \texttt{mutex\_tryenter()} reverse-order recovery pattern as a code-level guard
+against lock-order inversion \parencite{netbsd_mutex}. A notable difference is how systems detect race conditions.
+FreeBSD's \texttt{INVARIANTS} and \texttt{WITNESS} turn race conditions and ordering errors into immediate panics
+accessible in development environments \parencite{freebsd_debugging}. For NetBSD, it relies more on convention and the
+context matrix. It also lacks a production-grade detector that is comparable in performance with FreeBSD. The NetBSD jails work
+discussed in Section \ref{resource-contention} showed that \texttt{secmodel\_eval} calls from hot-path-adjacent subsystems
+could interact with lock ordering and recursion in UVM and scheduling paths to produce a full and unrecoverable freeze
+\parencite{petermann_jails}.
+
+\subsection{Deadlock Revisited} \label{deadlock-revisited} % done
+
+Building on the prevention-by-ordering strategies introduced in Section \ref{handling-deadlock}, both systems guard against
+particular structural deadlock classes that arise specifically from concurrency. FreeBSD addresses a case in which a thread holds a
+spin mutex, is interrupted, and the interrupt handler tries to acquire the same lock, which would wedge both parties
+\parencite{freebsd_mutex}. It prevents this by requiring spin mutexes to disable interrupts on the local CPU while held
+\parencite{freebsd_mutex}. This is so that no handler can contest the lock there \parencite{freebsd_mutex}.
+A second case arises when a thread holding a spin mutex is preempted and the new thread spins forever waiting for a lock the
+evicted holder cannot release \parencite{freebsd_smp_handbook}. FreeBSD treats spin-lock hold as a preemption-critical region
+and disables preemption through the critical-section mechanism \parencite{freebsd_smp_handbook}. This prevents the holder from
+being evicted before releasing \parencite{freebsd_smp_handbook}. Potential ordering violations can be caught during the development
+of the kernel by the \texttt{WITNESS} option \parencite{freebsd_kerneldebug}. It maintains a directed graph of lock-acquisition
+orders and checks for cycles at every acquire \parencite{freebsd_kerneldebug}. It also prints a warning and stack trace on detection
+\parencite{freebsd_kerneldebug}. It can drop into the debugger under \texttt{WITNESS\_KDB} and can skip the heavily-exercised spin
+locks under \texttt{WITNESS\_SKIPSPIN} \parencite{freebsd_kerneldebug}. Its limitation, as previously mentioned in Section
+\ref{handling-deadlock}, is that it is disabled in production, so violations confined to rare paths may surface only after
+deployment \parencite{freebsd_kerneldebug}.
+
+Beyond deadlock, FreeBSD must contend with two hazards related to liveness. The first is starvation. ULE bounds the maximum latency a
+thread of a given priority experiences by the product of its slice size and the number of runnable threads at that priority
+\parencite{mckusick2014_process}. Also, its two-queue timeshare structure works to keep higher-priority batch jobs from starving
+lower-priority ones \parencite{mckusick2014_process}. Even so, as mentioned in Section \ref{resource-performance},
+\textcite{bouron2018} found that ULE can starve background threads even within a single application. While that behavior can benefit
+the interactive threads, it breaks fairness assumptions for workloads with identical threads \parencite{bouron2018}. The
+second hazard is livelock. BSD-derived systems are susceptible to \textit{receive livelock}, in which the system spends
+all its time servicing receives interrupts under extreme network load and delivers no packets to applications \parencite{mogul1996}.
+This is because interrupt handling has absolute priority \parencite{mogul1996}. The solution which was developed for 4.4BSD
+is to schedule network interrupt processing as deliberately as process execution, which can be done either through per-interface
+rate limiting or by switching to polling when load is extreme \parencite{mogul1996}.
+
+NetBSD prevents deadlock through the same convention-based ordering with the addition of the \texttt{LOCKDEBUG} diagnostic option
+mentioned in Section \ref{handling-deadlock}. A complementary safeguard is the context-validity matrix in Table
+\ref{netbsd-context-matrix} \parencite{netbsd_locking}. It specifies that adaptive mutexes are invalid in hard interrupt context,
+that is \texttt{rwlock()} is valid in thread and soft interrupt context but not hard interrupt context \parencite{netbsd_locking}.
+Furthermore, \texttt{spl()} is valid only in thread context \parencite{netbsd_locking}. The matrix also consider cross-context
+deadlocks such as taking a sleeping lock from an interrupt handler and misuse panics in debug builds \parencite{netbsd_locking}.
+For starvation, NetBSD's time-sharing queue boosts I/O-bound LWPs on wakeup and dynamically recalculates each LWP's priority and
+quantum, which cycles threads of the same priority in round-robin fashion \parencite{rasiukevicius2009}. Real-time
+\texttt{SCHED\_FIFO} threads can by design starve lower-priority threads indefinitely, which is the reason as to why only the
+superuser may assign \texttt{SCHED\_FIFO} \parencite{rasiukevicius2009}. For livelock, the jails freeze mentioned in Section
+\ref{resource-contention} is NetBSD's documented real-world case \parencite{petermann_jails}. It is the absence of a
+production-ready deadlock or livelock detector implying that such conditions can presently be found
+only through exhaustive testing \parencite{petermann_jails}.
+
+FreeBSD pairs convention with the mature \texttt{WITNESS} verifier \parencite{freebsd_kerneldebug}. It then
+adds structural defenses, which include interrupt-disabling spin mutexes, preemption-disabled spin regions, and an
+explicit polling escape from receive livelock \parencite{freebsd_smp_handbook}. Each named concurrency hazard thus has a
+concrete answer in FreeBSD. While NetBSD relies on convention, the context matrix, and compile-time \texttt{LOCKDEBUG}
+\parencite{netbsd_deadlock_detector}. That approach is fine when the discipline is followed, but it offers no runtime safety net
+\parencite{netbsd_deadlock_detector}. The same complex interactions that FreeBSD's tooling would flag in development can
+therefore persist into production on NetBSD, which can surface caused by reboot-only freezes \parencite{petermann_jails}.
+
+\subsection{Locking Strategies} \label{locking-strategies} % done
+
+FreeBSD follows a fine-grained locking strategy refined across two decades through the SMPng project, which was previously
+covered in Section \ref{scalability} \parencite{freebsd_vs_dragonfly}. To revisit, FreeBSD 5.x replaced the \texttt{Giant}
+lock with per-subsystem locks; FreeBSD 7.x added ULE and finer lock granularity; FreeBSD 10 and later moved most subsystems to
+per-structure locks, reader-writer locks, or lockless algorithms; and FreeBSD 14 brought mature NUMA-aware allocation
+\parencite{freebsd_vs_dragonfly}. This transition exposed a significant drawback of fine-grained locking \parencite{freebsd_netperf}.
+It improved parallelism and preemption in the network stack but it substantially raised per-packet processing cost through
+synchronization \parencite{freebsd_netperf}. The subsequent \textit{netperf} project was formed specifically to recover
+parallelism while reducing the overhead that comes with it \parencite{freebsd_netperf}. The added complexity cost is quantifiable
+according to \textcite{toy2010}. An evaluation of FreeBSD locking found that replacing \texttt{Giant} with fine-grained locks
+in the \texttt{sysctl} subsystem raised the lock-acquisition count by around two orders of magnitude \parencite{toy2010}.
+Correct fine-grained locking acquires a lock at every shared-data access point rather than once per syscall
+\parencite{toy2010}. In addition, every such acquisition site is a potential ordering bug \parencite{toy2010}.
+To keep that overhead in check, FreeBSD also avoids locking where it can. Widely-shared credential structures use a
+copy-on-write discipline \parencite{freebsd_smp_lock_strategies}. Many references may share one \texttt{struct ucred},
+and modifying it duplicates the structure and updates only the caller's reference \parencite{freebsd_smp_lock_strategies}.
+Under fine-grained SMP, a thread consuming a shared credential then needs no lock at all because the copy-on-write guarantee
+ensures that no other thread will mutate its copy \parencite{freebsd_smp_lock_strategies}. Production visibility into
+whatever contention remains comes from the DTrace \texttt{lockstat} provider \parencite{freebsd_smp_lock_strategies}. It
+reports which locks are spinning, how many events per second occur, and which callers are the primary contenders,
+all without the overhead of a debug kernel \parencite{freebsd_smp_lock_strategies}.
+
+NetBSD 4.0 used a coarse model of spinlocks combined with a per-CPU interrupt priority level that accumulated over many
+years, whose rules had become difficult to use correctly \parencite{feyrer2008}. The \texttt{lockmgr} primitive, the only
+available sleep lock, was inefficient and slow \parencite{feyrer2008}. NetBSD 5.0 replaced this wholesale with fine-grained
+locking across almost all core subsystems \parencite{feyrer2008}. However, this conversion was not uniform. The
+VM system, the allocators, and most filesystem frameworks were converted, but the network stack remained under a single
+global lock \parencite{netbsd_smp_networking}. NetBSD minimizes contention through a hierarchy of increasingly lightweight
+read-side mechanisms:
+
+\begin{itemize}
+	\item \textbf{Passive serialization} (\texttt{pserialize}) enables lock-free reads in soft-interrupt context
+	      \parencite{netbsd_locking}.
+	\item \textbf{Passive references} (\texttt{psref}) let a CPU acquire and release a reference to a resource cheaply with
+	      no inter-processor synchronization during normal use, deferring that synchronization until the resource is pending
+	      destruction \parencite{netbsd_locking}.
+	\item \textbf{Per-CPU reference counts} (\texttt{localcount}) maintain reference counts per CPU without atomic
+	      operations in the common case \parencite{netbsd_locking}.
+\end{itemize}
+
+\noindent
+A major tradeoff of these mechanisms is cost asymmetry. While reads are nearly free, but destroying a resource requires
+expensive inter-processor synchronization to drain all notable references \parencite{netbsd_locking}. To find the hot locks
+that are worth refactoring, NetBSD provides \texttt{lockstat()}, which was first introduced in NetBSD 4.0
+\parencite{netbsd_lockstat}. It groups adaptive-mutex spin events by lock and call site with counts and durations
+\parencite{netbsd_lockstat}. A developer can thereby identify a contender such as \texttt{uvm\_pageqlock} appearing under
+\texttt{uvm\_fault\_internal} and decide whether to move to a finer-grained or lockless approach \parencite{netbsd_lockstat}.
+
+It can be observed that systems pursue fine-grained locking. Both also supply production-grade contention profilers with
+FreeBSD's DTrace \texttt{lockstat} provider and NetBSD's \texttt{lockstat()}. Their strategies mainly differ in completeness
+and emphasis. FreeBSD's conversion is essentially total and reaches even the network stack. It then layers copy-on-write and
+lockless techniques on top to claw back the per-acquisition overhead that fine granularity imposes \parencite{freebsd_smp_lock_strategies}.
+NetBSD's conversion is more deliberate but partial, which leaves the network stack globally locked
+\parencite{netbsd_smp_networking}. Though it reaches for a richer set of read-mostly primitives, namely \texttt{pserialize},
+\texttt{psref}, and \texttt{localcount}, which push read-side cost toward zero \parencite{netbsd_locking}.
+
+\subsection{Performance and Overhead} \label{concurrency-performance} % done
+
+FreeBSD's blocking mutex is cheaper than a spin mutex in the uncontested case, which requires only a single atomic
+compare-and-swap to acquire or release \parencite{mckusick2014_sync}. A contested release is far more expensive because the
+kernel must locate the turnstile, lock the turnstile chain, and wake the waiters \parencite{mckusick2014_sync}.
+Adaptive spinning mitigates this by letting a waiter spin when the holder is running on another CPU instead of
+entering the costly block-and-wakeup cycle \parencite{mckusick2014_sync}. Locking too finely appeared during the netperf work
+\parencite{freebsd_netperf}. The first attempt at fine-grained network-stack locking introduced a lock at every critical
+structure, wherein the resulting granularity was so excessive that locking overhead overwhelmed the available
+parallelism \parencite{freebsd_netperf}. This was fixed by selectively coarsen and amortizing cost by grouping the
+processing of similar items such as packets under a single lock instead of locking per item \parencite{freebsd_netperf}.
+FreeBSD also keeps its strictest correctness checks out of the hot path by making them opt-in \parencite{mckusick2014_process}.
+Production kernels rely on the locking hierarchy, adaptive mutexes, and turnstile priority propagation,
+while \texttt{WITNESS} and \texttt{INVARIANTS} are added only in debug kernels with a worst-case cost exceeding
+400\% \parencite{mckusick2014_process}. Two FreeBSD tradeoffs are tunable rather than fixed. The interrupt-driven
+reception model imposes a context switch per incoming packet, which can devote the entire CPU to interrupt handling
+under heavy loads \parencite{freebsd_polling}. FreeBSD's optional device polling, configurable through \texttt{polling()},
+disables interrupt-driven reception in favor of polling at clock ticks and in the idle loop \parencite{freebsd_polling}. This
+removes the per-packet switch and lets the operator bound how much CPU goes to device handling \parencite{freebsd_polling}.
+The scheduler's time quantum is a second such dial \parencite{mckusick2014_process}. Shorter quanta improve
+interactive response but might cause more frequent context switches that flush caches and reduce throughput
+\parencite{mckusick2014_process}. ULE therefore sizes quanta dynamically, smaller for interactive threads and
+larger for CPU-bound batch threads \parencite{mckusick2014_process}. This is to optimize both rather than fixing
+a single compromise.
+
+NetBSD frames its primitives around cost-proportional use that matches the expense of a mechanism to the frequency
+and criticality of what it protects:
+
+\begin{itemize}
+	\item \texttt{atomic\_ops(3)} and \texttt{membar\_ops(3)} are valid in all three execution contexts and carry only the
+	      lowest hardware-level cost \parencite{netbsd_locking}.
+	\item Adaptive mutexes carry context-dependent overhead that spin when the holder is on another CPU and sleeping
+	      otherwise \parencite{netbsd_locking}.
+	\item \texttt{pserialize} and \texttt{psref} provide near-zero-cost reads at the price of expensive write-side
+	      inter-processor synchronization \parencite{netbsd_locking}.
+	\item \texttt{localcount} avoids atomic operations during normal use but pays an inter-processor cost when draining
+	      references \parencite{netbsd_locking}.
+\end{itemize}
+
+\noindent
+The adaptive mutex itself spins only when the holder runs on a different CPU and sleeps otherwise \parencite{ozaki2015}.
+This makes it unsuitable for hardware interrupt handlers, which cannot sleep \parencite{ozaki2015}. Performing sleepable
+work such as memory allocation while holding one is explicitly discouraged since it degrades performance and
+introduces latency spikes \parencite{ozaki2015}. This modern arrangement directly addresses the hidden costs of the pre-5.0
+model \parencite{feyrer2008}. There the \texttt{spl} system masked interrupts on the local CPU for every access to a
+shared structure \parencite{feyrer2008}. Its rules are also about which level protected which data were hard to reason
+about \parencite{feyrer2008}. Replacing \texttt{spl} with per-object locks made the cost of each protection operation
+proportional to the scope it guards, which improved both correctness reasoning and average-case performance \parencite{feyrer2008}.
+
+Both systems adopt adaptive mutexes that spin or sleep according to the state of the holder. Both also treat the strictest correctness
+checking as a development-time cost to be excluded from production. Lastly, both learned that lock granularity must be
+tuned rather than maximized. FreeBSD's distinctive levers are workload-facing, namely the polling escape from interrupt
+livelock and the load-adaptive quantum, both of which suit its server-tuning orientation \parencite{freebsd_polling}.
+NetBSD's implementation is the consciously cost-graded ladder of primitives listed above, which lets a developer pay
+only for the synchronization strength a given access truly needs \parencite{netbsd_locking}. That ladder is
+also why NetBSD's tuning decisions are made largely at the point code is written, whereas FreeBSD's \texttt{polling()}
+and dynamic quantum remain knobs an administrator adjusts for a particular load \parencite{freebsd_polling}.
+
+\subsection{Scalability and Multicore Considerations} \label{concurrency-scalability} % done
+
+FreeBSD's multicore scalability is the cumulative product of the twenty-year progression as discussed in Section
+\ref{resource-scalability}, which reached scalability beyond 100 cores for many workloads \parencite{freebsd_vs_dragonfly}.
+On NUMA hardware, FreeBSD places memory round-robin across nodes to average out access latencies for workloads that
+cannot be confined to a single domain \parencite{lameter2013}. This lets it perform reasonably on systems that cannot
+interleave cache lines in hardware or firmware \parencite{lameter2013}. Moreover, it prevents any one node from becoming
+a bottleneck \parencite{lameter2013}. However, the policy does not optimize for maximum locality, hence workloads
+with strong locality affinity may do better under a nearest-node placement \parencite{lameter2013}. The scheduler's topology
+awareness is itself a scaling cost at high core counts \parencite{bouron2018}. As noted in Section \ref{resource-performance},
+\textcite{bouron2018} found that \texttt{sched\_pickcpu()} may scan all cores up to three times when placing a
+waking thread, which consumes 13\% of all CPU cycles on scanning alone in sysbench. The very topology awareness that aids
+placement can thus dominate runtime for short-lived, wake-heavy workloads as cores multiply \parencite{bouron2018}. The
+workload-dependence established by \textcite{cui2011} further supports this finding. FreeBSD scales better than Linux for
+socket-intensive operations but might not perform well for file-descriptor and process-intensive ones, with the shared
+bottleneck being synchronization primitives on shared kernel data \parencite{cui2011}.
+
+NetBSD's most recent advancement came with NetBSD 10.0 in March 2024, which delivered substantial SMP gains over the
+9.x series \parencite{netbsd_10_0}. The improvements include a faster per-directory red-black tree replacing the global
+path-lookup cache, a rewritten page allocator with CPU topology awareness, replacement of global counters with per-CPU
+counters, reduced lock contention across the VM system, and improved scheduling for hybrid CPU architectures such
+as ARM big.LITTLE \parencite{netbsd_10_0}. Benchmarks showed large gains on compute-intensive and filesystem-bound
+multicore workloads \parencite{netbsd_10_0}. The move from global to per-CPU counters directly attacks the bottleneck
+identified by \textcite{cui2011}, namely synchronization on shared data and the lock thrashing in which contention at
+high core counts degrades rather than improves speedup \parencite{cui2011}. Per-CPU counters remove a global counter
+that would otherwise become a single point of contention as cores increase \parencite{cui2011}. NetBSD's scalability
+limitation remains its network stack, which is still protected by a single global lock \parencite{netbsd_smp_networking}.
+This is attributed to the stack's monolithic structure, its asynchronous upcalls between layers, and its many scattered
+global variables \parencite{netbsd_smpnet}. The consequence is that network-intensive workloads cannot spread across
+multiple cores simultaneously, which is a hard ceiling for server applications \parencite{netbsd_smp_networking}.
+The migration path is set out by \textcite{ozaki2015}, wherein it converts individual drivers and protocol handlers
+from \texttt{spl} to adaptive mutexes and \texttt{pserialize}. The  \texttt{spl}-protected code runs in all contexts
+but inhibits SMP, while mutex-protected code is SMP-safe in thread context but context-dependent in interrupt context
+\parencite{ozaki2015}. Because each protocol layer must be converted, tested, and fitted into the lock hierarchy individually,
+the transition stays stable but spans multiple major releases \parencite{ozaki2015}.
+
+FreeBSD has already carried fine-grained locking and NUMA awareness through the entire kernel, which includes the
+network stack. It also has reached high single-system core counts while still finding fresh bottlenecks at each
+generation \parencite{freebsd_guzik}. Its tuning is deliberate, aimed at locality and at large package-build and microbenchmark
+workloads \parencite{freebsd_guzik}. NetBSD has made strong recent progress in its VM, allocator, and scheduler subsystems
+\parencite{netbsd_10_0}. It also attacks shared-counter contention directly \parencite{netbsd_10_0}. Its globally-locked network
+stack still leaves network-intensive multicore \parencite{netbsd_smp_networking}. Both are converting the kernel to scale
+across many cores and the network stack is something FreeBSD has accomplished unlike NetBSD.
+
+\subsection{Summary} \label{concurrency-summary} % done
+
+FreeBSD and NetBSD arrived at similar concurrency foundations, which diverged in terms of maturity, completeness, and
+emphasis rather than fundamental design. Both abandoned M:N threading in favor of a 1:1 model that is simpler and faster.
+However, the threading model was implemented differently. FreeBSD binds each user thread to a distinct kernel thread,
+while NetBSD represents both processes and POSIX threads uniformly as light-weight processes. This serves as a single
+abstraction that lets one scheduler apply the same time-sharing and real-time policies to every entity. Both supply nearly
+identical synchronization primitives such as adaptive mutexes, reader-writer locks, condition variables, and atomics.
+Both also follow a prevention-first stance toward deadlock through consistent lock ordering. FreeBSD's strengths lies
+on its depth of implementation and the amount of tooling available, which includes a rich and workload-tunable set of
+lock types, mature runtime verifiers in \texttt{WITNESS} and \texttt{INVARIANTS} that convert race conditions and
+ordering errors into diagnosable and development-time panics, targeted structural defenses against named hazards,
+and a complete fine-grained locking. This is at the cost of complexity and synchronization overhead. Replacing Giant
+with fine-grained locks raised lock-acquisition counts in some subsystems by two orders of magnitude, Moreover,
+acquisition site is a potential ordering bug. NetBSD's strengths lies in leanness, portability, and minimalism.
+This is reflected by its smaller primitive set governed by explicit preconditions and a context-validity matrix,
+a cost-graded ladder of read-mostly mechanisms that push read-side cost toward zero, and a portability-first design
+that imposes weaker atomic-ordering guarantees requiring explicit memory barriers. It falls short in the absence of
+a production-grade runtime deadlock or race detector as it relies on convention, the context matrix, and compile-time
+\texttt{LOCKDEBUG}. It also has an incomplete fine-grained conversion that leaves the network stack under a single
+global lock.
+
+The tradeoffs are clear across the four comparison dimensions. In terms of correctness, FreeBSD's \texttt{WITNESS}
+and \texttt{INVARIANTS} provide a runtime safety net that turns concurrency hazards into immediate panics during
+development, whereas NetBSD relies more heavily on convention and its context matrix, which leaves complex
+codepaths exposed. This is a gap concretely realized in NetBSD's jails work, where \texttt{secmodel\_eval} interactions
+with UVM and scheduling paths under mixed CPU and I/O load produced a full freeze. In terms of performance, both adopt
+adaptive mutexes that spin or sleep by holder state and both keep strict correctness checks out of the production hot
+path. FreeBSD's distinctive levers are workload-facing administrator knobs like polling and the load-adaptive time
+quantum. While NetBSD's contribution is its cost-proportional ladder of primitives chosen at code-writing time. In
+terms of scalability, both pursue fine-grained and topology-aware locking, but FreeBSD further refined on it
+with its benchmark that reached beyond 100 cores with NUMA awareness across the whole kernel including the network stack.
+NetBSD made strong recent gains in 10.0, yet still leaves its globally-locked network stack as a hard ceiling for
+network-intensive multicore workloads. In terms of complexity, FreeBSD is consistently heavier, as reflected
+from its layered copy-on-write and lockless techniques that claws back the overhead its total conversion imposes.
+This is in contrast with NetBSD wherein it stays simpler and more uniform, which makes it less complete defers
+much tuning to the moment code is written rather than to runtime.
+
+For a system with many threads accessing shared data, both systems track lock owners and waiters and apply
+priority inheritance through turnstiles to prevent inversion, but FreeBSD offers finer control. Developers
+get to select among lock types, which allows them to balance priority propagation against sleep tolerance.
+Furthermore \texttt{rmlock} propagates priority even for read-mostly data. Lastly, \texttt{WITNESS} catches ordering
+violations before deployment. NetBSD handles the same scenario with a smaller set nudging developers toward minimal
+synchronization, using \texttt{pserialize} for lock-free reads that instead block writers until all readers exit, and leaning on
+the context matrix to foreclose cross-context deadlocks. For a high-performance application such as
+a web server or database, FreeBSD is generally the stronger performer since its complete fine-grained conversion
+lets network-intensive workloads spread across many cores. Also, its zero-copy \texttt{sendfile()} and VM-optimized pipes,
+which outperform local sockets by around 63\%, suit high-volume content serving. In addition, its SysV shared
+memory and shared/exclusive locks favor database workloads. Its scaling past 100 cores with NUMA awareness
+also directly serves server hardware. NetBSD competes on lighter-weight efficiency and portability and made
+multicore progress in 10.0, but its single global network lock prevents network-intensive workloads
+from spreading across cores. Overall, FreeBSD trades complexity and overhead for completeness, mature tooling, and
+server-scale performance, while NetBSD trades feature completeness for minimalism, portability, and
+competitive lightweight efficiency on the subsystems it has already converted.
