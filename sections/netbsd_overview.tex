@@ -1,0 +1,61 @@
+\subsection{NetBSD}
+
+NetBSD is a \textbf{free, open-source, Unix-like operating system} founded in 1992 by Chris Demetriou, Theo de Raadt, Adam Glass, 
+and Charles M. Hannum \parencite{netBSDnd}. Its first public release, NetBSD 0.8, appeared in 1993 and was derived 
+from 4.3BSD Lite and 386BSD, both of which trace back to the Berkeley Software Distribution of Unix developed at UC Berkeley 
+\parencite{netBSDnd}. The BSD family as a whole has a well-documented lineage: NetBSD has its roots in both 386BSD 
+and 4.4BSD Lite, OpenBSD is based on the NetBSD source tree, FreeBSD 1.0 was based on 386BSD 0.1, and DragonFlyBSD began as 
+a fork of FreeBSD 4.8 \parencite{thomas_rantugi2022}. By 2022, the average age of these BSD operating systems was 26 years, with 
+NetBSD being among the oldest still under active development \parencite{thomas_rantugi2022}.
+
+The hardware environment of the early 1990s directly shaped NetBSD's architectural decisions. At the time, there was no single 
+dominant processor architecture, memory was limited and expensive, and Unix systems were largely tied to specific vendor hardware. 
+These constraints pushed NetBSD's designers toward a highly abstracted kernel architecture. \textcite{chung2002} documents that the kernel's 
+I/O subsystem is built around the Virtual File System layer and the vnode interface, both of which are deliberately machine-independent 
+so that the system can run on a wide range of hardware without requiring deep rewrites. The memory management subsystem, known as UVM, 
+was designed to handle physical memory efficiently even on resource-constrained platforms, and the buffer cache was structured with 
+carefully managed free lists and hash tables to minimize memory overhead while keeping frequently accessed data available in memory \parencite{chung2002}. 
+The Berkeley Fast File System, which NetBSD uses as its primary filesystem, also reflects early hardware realities: it organizes disk storage into 
+cylinder groups to reduce mechanical seek times, which was a significant performance concern when spinning hard drives were the only available storage 
+medium \parencite{chung2002}.
+
+The motivation for creating NetBSD came from dissatisfaction with the available options at the time. Commercial Unix systems were expensive 
+and locked to specific hardware vendors, while freely available alternatives like 386BSD existed but were not clean or stable enough 
+for widespread use. The founders wanted to build something that was both free and genuinely portable, meaning it could run on practically 
+any hardware platform without major rewrites \parencite{netBSDnd}. There was also a deliberate choice to ship NetBSD as a complete 
+operating system rather than just a kernel. This is an important distinction from Linux, which refers only to the kernel and does not include 
+userland utilities, filesystems, or windowing systems \parencite{thomas_rantugi2022}. By shipping a complete system, NetBSD became useful for both 
+research and embedded development, where having a single, coherent, well-documented codebase is more practical than assembling components from 
+multiple sources. \textcite{chung2002} notes that NetBSD's documentation quality and clean code structure made it a go-to reference for studying filesystem 
+implementation, particularly its FFS documentation in the 1.6 release.
+
+NetBSD is primarily used in server, embedded systems, and research environments rather than general consumer desktop use. Its intended audience is 
+developers, embedded systems engineers, and researchers who need an operating system that can be ported to unusual or constrained hardware. Portability 
+is its defining priority, which sets it apart from OpenBSD, which prioritizes security and correctness, and FreeBSD, which leans toward 
+performance and enterprise features \parencite{thomas_rantugi2022}. This priority is reflected throughout the kernel: the machine-independent VFS 
+layer, the vnode interface, the platform-neutral memory management in UVM, and the Unified Buffer Cache that integrates the I/O and virtual 
+memory subsystems to avoid redundant data copies are all engineering choices made in service of portability and clean abstraction rather than 
+raw performance \parencite{chung2002}. NetBSD follows a monolithic kernel design, where the entire kernel runs in a single protected memory space. It 
+also adheres to the Unix philosophy of treating devices, sockets, and other system resources as files through a unified file descriptor interface, 
+which means application programs do not need to know whether they are reading from a disk, a network socket, or a hardware device since they interact 
+with all of them through the same system call layer \parencite{chung2002}.
+
+In terms of influence, NetBSD draws from earlier BSD and Unix research, including the Sun Microsystems VFS design introduced in the
+late 1980s and the Berkeley Fast File System, and it in turn directly influenced OpenBSD, which Theo de Raadt forked from the NetBSD
+source tree following a disagreement with the core team \parencite{thomas_rantugi2022}. The broader BSD family also forms the foundation
+of Apple's iOS, macOS, and watchOS \parencite{thomas_rantugi2022}, giving NetBSD's design decisions an indirect reach into consumer devices 
+worldwide. The development roles within NetBSD follow a clearly defined open-source model: contributors submit code, committers hold 
+write access to the repository, and a core team acts as the final gatekeepers of the source code \parencite{thomas_rantugi2022}. Code reviews 
+are not mandatory for all changes, but committers are expected to have nontrivial changes reviewed by at least one other person before 
+committing \parencite{thomas_rantugi2022}.
+
+By 2022, NetBSD had 277 committers and 294,140 total commits, with a codebase of approximately 8.67 million lines of kernel code and 
+39.44 million lines of non-kernel code, the largest non-kernel codebase among the four BSD systems studied \parencite{thomas_rantugi2022}. 
+Its kernel code grows at a median annual rate of 7.15\% and non-kernel code at 6.19\%, with both subsystems increasing at a similar 
+pace \parencite{thomas_rantugi2022}. The distribution of commits also reveals something about its architecture: 52.68\% of commits touch 
+only kernel code, 46.04\% touch only non-kernel code, and just 1.27\% touch both simultaneously, the lowest mixed commit rate among 
+the four BSDs \parencite{thomas_rantugi2022}. This low percentage of mixed commits confirms that the kernel and userland are architecturally 
+well-separated, allowing engineers to work on each independently, which is exactly what a portability-first system requires. Kernel 
+commits in NetBSD are also consistently larger than non-kernel commits, with a median kernel commit size of 9 lines versus 7 lines for 
+non-kernel commits, and code reviews for kernel changes take longer to complete than non-kernel reviews, which is consistent with the 
+higher technical risk and complexity involved in modifying kernel code \parencite{thomas_rantugi2022}.
