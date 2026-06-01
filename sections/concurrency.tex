@@ -407,7 +407,7 @@ and dynamic quantum remain knobs an administrator adjusts for a particular load 
 \subsection{Scalability and Multicore Considerations} \label{concurrency-scalability} % done
 
 FreeBSD's multicore scalability is the cumulative product of the twenty-year progression as discussed in Section
-\ref{resource-scalability}, which reached scalability beyond 100 cores for many workloads \parencite{freebsd_vs_dragonfly}.
+\ref{scalability}, which reached scalability beyond 100 cores for many workloads \parencite{freebsd_vs_dragonfly}.
 On NUMA hardware, FreeBSD places memory round-robin across nodes to average out access latencies for workloads that
 cannot be confined to a single domain \parencite{lameter2013}. This lets it perform reasonably on systems that cannot
 interleave cache lines in hardware or firmware \parencite{lameter2013}. Moreover, it prevents any one node from becoming

@@ -368,7 +368,7 @@ and jails despite the fact that no global tree is managed in performance-critica
 NetBSD's approach to scalability began in the 5.0 release with the introduction of processor and CPU sets, and dynamic CPU
 affinity as its primary resource scaling mechanisms across cores \parencite{netbsd_5_0}. The older scheduler-activation
 model mentioned in Section \ref{resources-managed}, which scaled poorly on multiprocessor and real-time systems,
-is replaced by a 1:1 threading model \parencite{williams_scheduler}. As discussed in Section \ref{load-balancing}, the
+is replaced by a 1:1 threading model \parencite{williams_scheduler}. As discussed in Section \ref{load-balancing-distribution}, the
 dispatcher balances utilization and affinity by performing heuristic decisions based on observed thread behavior
 \parencite{rasiukevicius2009}. This is recognized as a known limitation to NetBSD, which is relative to ULE's explicit and
 machine-dependent topology awareness \parencite{rasiukevicius2009}. Despite this known limitation, NetBSD employs other
