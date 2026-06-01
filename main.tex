@@ -1,4 +1,3 @@
-
 \documentclass{article}
 \usepackage{graphicx}
 \usepackage[utf8]{inputenc}
@@ -13,7 +12,7 @@
 }
 \author{
     Brillos, Christian \\ ccbrillos@up.edu.ph \and
-    Gonzales, Lorenzo \\ lgonzales@up.edu.ph
+    Gonzales, Lorenzo \\ lpgonzales3@up.edu.ph
 }
 \date{1 June 2026}
 
@@ -25,7 +24,7 @@
 \tableofcontents
 \newpage
 
-\section{Overview}
+\section{Overview} \label{overview}
 
 \input{sections/freebsd_overview}
 
@@ -33,48 +32,65 @@
 
 \newpage
 
-\section{Kernel}
+\section{Kernel} \label{kernel}
 
 \input{sections/kernel.tex}
 
 \newpage
 
-\section{Processor Management}
+\section{Processor Management} \label{processor}
 
 \input{sections/process_man.tex}
 
 \newpage
 
-\section{Memory Management}
+\section{Memory Management} \label{memory}
 
 \input{sections/memory_man.tex}
 
 \newpage
 
 % done
-\section{File and Disk Management}
+\section{File and Disk Management} \label{file-and-disk}
 \input{sections/file_and_disk.tex}
 
 \newpage
 
 % done
-\section{Resource Management}
+\section{Resource Management} \label{resource}
 \input{sections/resource.tex}
 
 \newpage
 
 % done
-\section{Concurrency Management}
+\section{Concurrency Management} \label{concurrency}
 \input{sections/concurrency.tex}
 
 \newpage
 
-\section{Conclusion}
+\section{Conclusion} \label{conclusion}
 \input{sections/conclusion.tex}
 
 \newpage
 
-\section{Acknowledgement}
+\section{Author Contributions}
+
+The authors would like to acknowledge the work done by each of the author of this paper.
+
+Lorenzo Gonzales worked on Sections \ref{kernel}, \ref{processor}, and \ref{memory},
+which covers the topics of Kernel Management, Processor Management, and Memory Management
+respectively. Furthermore, Gonzales contributed to Section \ref{overview}, specifically
+Section \ref{netbsd} which introduces the NetBSD operating system. Lastly, Gonzales
+wrote Section \ref{conclusion}, the last section of the paper summarizing the implementations
+of FreeBSD and NetBSD, the major strengths and drawbacks of such implementations,
+and on which workloads and use cases each operating system excels at.
+
+Christian Brillos worked on Sections \ref{file-and-disk}, \ref{resource}, and \ref{concurrency},
+which covers the topics of File and Disk Management, Resource Management, and Concurrency
+Management respectively. Lastly, Brillos contributed to Section \ref{overview}, specifically
+Section \ref{freebsd} which introduces the FreeBSD operating system.
+
+Lastly, each author of this paper added and compiled their own reference entries.
 
 \newpage
 \printbibliography
